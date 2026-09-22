@@ -157,6 +157,12 @@ function toggleLink(): void {
 async function focusTitleIfNew(): Promise<void> {
   if (route.query.new === undefined) return
   await nextTick()
+  const active = document.activeElement
+  // 用户已开始交互（如点击了网格/编辑器）则不抢焦点，避免竞态把输入导走
+  if (active && active !== document.body && titleInputRef.value?.$el?.contains(active) !== true) {
+    void router.replace({ query: {} })
+    return
+  }
   const el = titleInputRef.value?.$el?.querySelector('input')
   el?.focus()
   el?.select()

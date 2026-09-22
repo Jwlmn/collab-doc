@@ -21,5 +21,9 @@ backend.bootstrap/cache/*.php
 *.log
 npm-debug.log*
 
+# Playwright 运行产物
+frontend/test-results/
+frontend/playwright-report/
+
 # 系统文件
 .DS_Store

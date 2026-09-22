@@ -48,6 +48,8 @@ const versionDrawerVisible = ref(false)
 const shareVisible = ref(false)
 const unreadComments = ref(0)
 const exporting = ref(false)
+/** 数据 seed/迁移完成前保持骨架，避免空表格可交互的竞态窗口 */
+const ready = ref(false)
 
 let provider: HocuspocusProvider | null = null
 let ydoc: Y.Doc | null = null
@@ -104,6 +106,9 @@ const range = computed(() => ({
 
 const editing = ref<{ r: number; c: number } | null>(null)
 const draft = ref('')
+/** mousedown 起点与是否发生拖动（区分「点选进入编辑」与「拖拽框选」） */
+const pressedCell = ref<{ r: number; c: number } | null>(null)
+const dragMoved = ref(false)
 
 function cellRaw(r: number, c: number): string {
   void dataRevision.value
@@ -160,17 +165,36 @@ function handleCellMouseDown(r: number, c: number, event: MouseEvent): void {
   // 这里手动让网格容器获得焦点，键盘事件才能进入 handleGridKeydown
   const wrap = (event.currentTarget as HTMLElement).closest('.grid-wrap')
   ;(wrap as HTMLElement | null)?.focus()
+
+  pressedCell.value = { r, c }
+  dragMoved.value = false
+
   selectCell(r, c, event.shiftKey)
-  if (!event.shiftKey) dragging.value = true
+  if (!event.shiftKey) {
+    dragging.value = true
+  } else {
+    pressedCell.value = null // shift 点击只扩选，不进入编辑
+  }
 }
 
 function handleCellMouseEnter(r: number, c: number): void {
   if (!dragging.value || isReadonly.value) return
+  if (focus.value.r !== r || focus.value.c !== c) {
+    dragMoved.value = true
+  }
   focus.value = { r, c }
 }
 
 function handleGlobalMouseUp(): void {
   dragging.value = false
+  // 普通单击（未拖动、非 shift）→ 选中并进入编辑：
+  // 让输入法(IME)/中文键入直接可用，无需先双击
+  const pressed = pressedCell.value
+  pressedCell.value = null
+  if (!pressed || dragMoved.value) return
+  if (pressed.r === focus.value.r && pressed.c === focus.value.c && !isReadonly.value) {
+    startEdit()
+  }
 }
 
 function startEdit(initial?: string): void {
@@ -227,6 +251,16 @@ function handleGridKeydown(event: KeyboardEvent): void {
     } else if (event.key === 'Escape') {
       event.preventDefault()
       cancelEdit()
+    } else if (
+      event.key.length === 1 &&
+      !event.metaKey &&
+      !event.ctrlKey &&
+      !event.altKey &&
+      document.activeElement?.tagName !== 'INPUT'
+    ) {
+      // input 尚未获得焦点时的字符兜底（focus 竞态不丢键）
+      event.preventDefault()
+      draft.value += event.key
     }
     return
   }
@@ -608,6 +642,7 @@ onMounted(async () => {
     }
     dataRevision.value++
     broadcastCell()
+    ready.value = true
   }
 
   if (provider.synced) {
@@ -769,7 +804,7 @@ onBeforeUnmount(() => {
       </n-space>
     </div>
 
-    <div v-if="loading" class="sheet-loading">
+    <div v-if="loading || !ready" class="sheet-loading">
       <div class="sheet-surface skeleton-surface">
         <n-skeleton height="24px" width="30%" style="margin-bottom: 16px" />
         <n-skeleton :height="360" :sharp="true" />
@@ -819,7 +854,7 @@ onBeforeUnmount(() => {
                 :data-remote-name="remoteCursorAt(r - 1, c - 1)?.name"
                 @mousedown.prevent="handleCellMouseDown(r - 1, c - 1, $event)"
                 @mouseenter="handleCellMouseEnter(r - 1, c - 1)"
-                @dblclick="selectCell(r - 1, c - 1); startEdit()"
+
               >
                 <input
                   v-if="isEditing(r - 1, c - 1)"
@@ -835,7 +870,7 @@ onBeforeUnmount(() => {
         </table>
       </div>
       <div class="grid-hint">
-        单击选中 · 拖拽 / Shift+点击框选 · 双击 / Enter / 键入编辑 · 方向键与 Tab 导航 · Esc 取消
+        单击编辑（支持中文输入法）· 拖拽 / Shift+点击框选 · Enter 确认 · Esc 取消 · 方向键与 Tab 导航
         · 公式示例：=A1+B2、=SUM(A1:A9)
       </div>
     </div>

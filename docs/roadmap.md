@@ -22,7 +22,7 @@
 
 ## 主线一：工程化基座（P0，一切的前提）
 
-- [ ] **Git 仓库初始化 + 首次提交**：`git init`、核对 `.gitignore`（已含 vendor/node_modules/.env 等）、初始 commit 打标签 `v0.9-feature-complete` —— 此前所有工作没有任何版本保护，这是**第一优先级**
+- [x] **Git 仓库初始化 + 首次提交** ✅（2026-09-22）：远程 `git@github.com:Jwlmn/collab-doc.git`，main 分支 329 文件/43KB 行已推送，标签 `v0.9-feature-complete` 已发布；提交前完成安全审查（无 .env/vendor/node_modules/sqlite/密钥入库，328KB pack）
 - [ ] **CI（GitHub Actions）**：push/PR 触发 —— 后端 `pint --test` + `php artisan test`；前端 `vue-tsc` + `vitest` + `vite build`
 - [ ] **Playwright E2E 冒烟**：把反复手工验收的流程固化 —— 登录 → 新建 MD/Excel → 编辑保存 → **双上下文协同断言** → 导入导出往返 → 搜索；CI 中跑（需 compose 起 pg/redis）
 - [ ] 存量 a11y 遗留清理（polish 文档中标注未完成的 `name/id` 批量补齐等）
@@ -69,7 +69,7 @@
 **主题：可交付 v3 ——「先有版本控制，再能上线，再防丢，再通知」**
 
 ```
-B1 工程化基座（git init + CI + Playwright 冒烟）     ← 第一动作
+B1 工程化基座（git init ✅已完成 + CI + Playwright 冒烟）  ← 剩 CI/E2E
 B2 生产就绪（全栈编排 + env 生产化 + 部署演练）
 B3 防丢失与通知（回收站 + 站内通知 + Excel 搜索分流）
 ```
