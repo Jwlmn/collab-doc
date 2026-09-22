@@ -1,0 +1,49 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+/* 配色变量定义在 index.html 的内联 <style>（防首帧闪黑），此处不重复 */
+
+body {
+  margin: 0;
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
+    'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  background: var(--bg-page);
+}
+
+/* 斜杠命令菜单（挂载于 body，需全局样式） */
+.slash-menu {
+  position: fixed;
+  z-index: 9999;
+  min-width: 200px;
+  max-height: 280px;
+  overflow-y: auto;
+  padding: 6px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+}
+.slash-menu-item {
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 14px;
+  cursor: pointer;
+  user-select: none;
+}
+.slash-menu-item.active {
+  background: var(--bg-muted);
+}
+
+/* 路由切换过渡 */
+.page-fade-enter-active,
+.page-fade-leave-active {
+  transition: opacity 0.15s ease;
+}
+.page-fade-enter-from,
+.page-fade-leave-to {
+  opacity: 0;
+}

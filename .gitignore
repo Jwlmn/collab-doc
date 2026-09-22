@@ -1,0 +1,25 @@
+# 环境变量（保留 .env.example）
+.env
+.env.local
+frontend/.env.local
+
+# 本地数据库文件（实际使用 Docker PostgreSQL）
+*.sqlite
+
+# 依赖
+node_modules/
+vendor/
+
+# 构建产物
+frontend/dist/
+server/dist/
+backend/public/build/
+backend/storage/*.key
+backend.bootstrap/cache/*.php
+
+# 日志
+*.log
+npm-debug.log*
+
+# 系统文件
+.DS_Store

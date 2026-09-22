@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="zh-CN" style="background: #f7f8fa">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>多人实时协作文档</title>
+    <!--
+      配色变量内联在 head：Vite 的业务 CSS 由 JS 注入，加载前页面无底色，
+      透明画布会闪黑（冷缓存首刷最明显）。阻塞式样式 + html 内联背景
+      保证首帧即有正确底色；变量唯一来源也是这里（main.css 不再重复定义）。
+      暂不支持深色模式（浅色固定）。
+    -->
+    <style>
+      :root {
+        color-scheme: light;
+        --bg-page: #f7f8fa;
+        --bg-surface: #ffffff;
+        --bg-muted: #f2f3f5;
+        --border-subtle: #e5e6eb;
+        --border-faint: #eef0f3;
+        --shadow-card: 0 1px 4px rgba(0, 0, 0, 0.06);
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
