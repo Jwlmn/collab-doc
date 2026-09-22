@@ -1,6 +1,6 @@
 # 后续推进路线图（Roadmap）
 
-> 状态：**B1 工程化基座已完成**（2026-09-22）；B2 生产就绪、B3 防丢失与通知 待执行
+> 状态：**B1 工程化 + B2 生产就绪均已完成**（2026-09-22）；剩 B3 防丢失与通知 → 主线四按需
 > 前情：M1–M9、打磨 18 项、导入导出、双文档类型、Excel v2 均已完成
 > 质量基线：77 PHPUnit / 70 Vitest / **Playwright E2E 3 组（本机 3 轮稳定）/ CI 绿（run 1cf89f1）**
 
@@ -13,7 +13,7 @@
 | 功能 | 文档/协作/权限/搜索/导入导出/双类型/表格引擎 全链路可用 | 深水功能待按需（见主线四） |
 | 版本控制 | ✅ git 已建立（Jwlmn/collab-doc，tag v0.9-feature-complete） | — |
 | 自动化 | ✅ CI 绿灯（双 job）+ 本机 E2E 三组稳定 | CI 内集成 E2E、a11y 清理待办 |
-| 部署 | 三进程裸跑宿主机（vite dev + artisan serve + tsx）；RoadRunner 二进制未装（GitHub 403）；docker 仅 pg/redis | 无法交付上线 |
+| 部署 | ✅ 生产栈可交付：docker compose.prod 一键起（nginx+fpm+hocuspocus+pg/redis），本机演练全流程通过；HTTPS 待公网加 TLS 层 | — |
 | 防丢失 | 文档删除 = **硬删**，无回收站 | 协作产品高频事故点 |
 | 通知 | 评论 @提及的 `mentions` 只存不用，无人被通知 | 闭环缺失 |
 | 其他 | 图片无法插入（无 image 扩展）；存量 a11y 遗留；中文硬编码 | 按需 |
@@ -31,14 +31,14 @@
 
 ## 主线二：生产就绪（P0）
 
-- [ ] **全栈编排**：docker-compose 扩展为完整栈（或提供 `Procfile`/启动脚本）：Nginx（托管前端 build + 反代 API/WSS）+ Laravel Octane（**优先重试 Swoole**——扩展已装好；RoadRunner 二进制 GitHub 403 可换镜像内下载或代理）+ HocusPocus + pg/redis
-- [ ] **生产 env 规范**：`APP_KEY`、`COLLAB_SECRET` 强随机、`SANCTUM_STATEFUL_DOMAINS` 换正式域名、`APP_URL`；`php artisan config:cache route:cache`；前端 `VITE_API_BASE_URL`/`VITE_COLLAB_URL` 构建期注入
-- [ ] **WSS/HTTPS**：协作连接 `wss://` 与 cookie 安全属性（Secure/SameSite）联调
-- [ ] **备份与恢复脚本**：pg 定时备份（cron/pg_dump）+ 恢复演练一次
-- [ ] **日志与监控**：日志轮转（laravel + collab server）、错误上报入口（Sentry 或等价）、健康检查端点已有 `/up` 纳入探活
-- [ ] **一次真实部署演练**：从零 clone → compose up → 跑通全功能，输出部署文档
+- [x] **全栈编排** ✅：`docker-compose.prod.yml` + 三镜像（backend php-fpm / server hocuspocus / web nginx 静态+fastcgi+WS 反代），仅暴露 8080；.dockerignore 防宿主依赖污染；Octane/Swoole 暂缓（php-fpm 够用，记录为后续性能选项）
+- [x] **生产 env 规范** ✅：APP_KEY/COLLAB_SECRET 注入与模板、Sanctum 域名带端口修正（踩坑：host:port 匹配）、APP_URL 等；config 缓存策略见 deployment.md
+- [x] **WSS** ✅：同源 `/collab` 反代 + getCollabUrl 自动识别，本机演练 ws→collab→pg 全通；**HTTPS/TLS** 留待公网部署（Caddy 方案已写入 deployment.md，本机无证书环境）
+- [x] **备份与恢复脚本** ✅：backup/restore 各演练通过（restore 修正为先重建 schema 再导入）
+- [x] **日志与监控（基础版）** ✅：`/up` 健康检查 + compose healthcheck + `logs` 排障手册；Sentry 等外部错误上报仍为后续项
+- [x] **一次真实部署演练** ✅：本机 compose build→up→浏览器全流程（注册登录、Excel 编辑持久化到 prod 库、搜索、静态/API），输出 **docs/deployment.md**
 
-**量级**：约 2–3 个工作日
+**量级**：约 2–3 个工作日（实际已完成）
 
 ## 主线三：防丢失与通知闭环（P1，产品安心感）
 
@@ -70,8 +70,8 @@
 
 ```
 B1 工程化基座 ✅ 已完成（git + CI 绿 + E2E 三组）
-B2 生产就绪（全栈编排 + env 生产化 + 部署演练）
-B3 防丢失与通知（回收站 + 站内通知 + Excel 搜索分流）
+B2 生产就绪 ✅ 已完成（编排 + env + 备份演练 + deployment.md）
+B3 防丢失与通知（回收站 + 站内通知 + Excel 搜索分流）  ← 下一步
 ```
 
 - **验收标准**：
