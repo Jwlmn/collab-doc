@@ -42,6 +42,8 @@ class DocumentResource extends JsonResource
                 ->values(),
             'created_at' => $this->created_at?->toIso8601String(),
             'updated_at' => $this->updated_at?->toIso8601String(),
+            // 回收站列表展示删除时间；正常文档为 null
+            'deleted_at' => $this->deleted_at?->toIso8601String(),
         ];
     }
 }

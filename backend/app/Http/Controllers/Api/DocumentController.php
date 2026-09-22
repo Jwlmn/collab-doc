@@ -9,6 +9,7 @@ use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\Rule;
 
 class DocumentController extends Controller
@@ -165,13 +166,68 @@ class DocumentController extends Controller
     }
 
     /**
-     * 删除文档。
+     * 删除文档（进入回收站，软删除）。
      */
     public function destroy(Document $document): Response
     {
         $this->authorize('delete', $document);
 
         $document->delete();
+
+        return response()->noContent();
+    }
+
+    /**
+     * 回收站列表（仅自己删除的文档）。
+     */
+    public function trashed(Request $request): AnonymousResourceCollection
+    {
+        $documents = $request->user()
+            ->documents()
+            ->onlyTrashed()
+            ->with(['user:id,name', 'members' => fn ($query) => $query->where('user_id', $request->user()->id)])
+            ->orderByDesc('deleted_at')
+            ->get();
+
+        return DocumentResource::collection($documents);
+    }
+
+    /**
+     * 从回收站恢复文档。
+     */
+    public function restore(Request $request, int $document): DocumentResource
+    {
+        /** @var Document|null $doc */
+        $doc = Document::onlyTrashed()->find($document);
+
+        if ($doc === null || $doc->user_id !== $request->user()->id) {
+            abort(404);
+        }
+
+        $doc->restore();
+
+        return new DocumentResource($doc->load(['user:id,name']));
+    }
+
+    /**
+     * 彻底删除文档（版本/评论/成员由外键级联清空，协同状态由协作表清理）。
+     */
+    public function forceDestroy(Request $request, int $document): Response
+    {
+        /** @var Document|null $doc */
+        $doc = Document::onlyTrashed()->find($document);
+
+        if ($doc === null || $doc->user_id !== $request->user()->id) {
+            abort(404);
+        }
+
+        $stateName = "doc-{$doc->id}";
+        $doc->forceDelete();
+
+        // document_states 由协作服务器建表（不在 Laravel 迁移中），彻底删除时一并清掉
+        if (Schema::hasTable('document_states')) {
+            DB::table('document_states')->where('name', $stateName)->delete();
+        }
 
         return response()->noContent();
     }

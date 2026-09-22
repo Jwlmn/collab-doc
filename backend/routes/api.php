@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\DocumentController;
 use App\Http\Controllers\Api\DocumentMemberController;
 use App\Http\Controllers\Api\DocumentVersionController;
 use App\Http\Controllers\Api\InviteController;
+use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\UserController;
 use Illuminate\Support\Facades\Route;
 
@@ -19,8 +20,18 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::get('/users/search', [UserController::class, 'search']);
 
+    Route::get('/notifications', [NotificationController::class, 'index']);
+    Route::post('/notifications/read-all', [NotificationController::class, 'markAllRead']);
+    Route::post('/notifications/{id}/read', [NotificationController::class, 'markRead']);
+
     // 须在 apiResource 之前注册，避免被 /documents/{id} 绑定吞掉
     Route::get('/documents/search', [DocumentController::class, 'search']);
+    Route::get('/documents/trashed', [DocumentController::class, 'trashed']);
+    // 恢复/彻底删除按 id 手动查找（文档处于 trashed，不能走隐式绑定）
+    Route::post('/documents/{document}/restore', [DocumentController::class, 'restore'])
+        ->whereNumber('document');
+    Route::delete('/documents/{document}/force', [DocumentController::class, 'forceDestroy'])
+        ->whereNumber('document');
 
     Route::apiResource('documents', DocumentController::class);
     Route::post('/documents/{document}/collab-token', CollabTokenController::class);

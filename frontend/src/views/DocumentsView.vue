@@ -210,7 +210,7 @@ async function handleRename() {
 async function handleDelete(doc: DocumentMeta) {
   try {
     await documents.remove(doc.id)
-    message.success(`已删除「${doc.title}」`)
+    message.success(`已将「${doc.title}」移入回收站`)
   } catch (error) {
     message.error(getApiErrorMessage(error))
   }
@@ -231,7 +231,7 @@ function handleOwnerMenu(key: string, doc: DocumentMeta) {
   else if (key === 'delete') {
     dialog.warning({
       title: '删除文档',
-      content: `确定删除「${doc.title}」吗？此操作不可恢复。`,
+      content: `确定删除「${doc.title}」吗？删除后会进入回收站，可随时恢复。`,
       positiveText: '删除',
       negativeText: '取消',
       positiveButtonProps: { type: 'error' },
@@ -300,6 +300,7 @@ function formatTime(value?: string): string {
           <n-button type="primary" :loading="creating">新建 ▾</n-button>
         </n-dropdown>
         <n-button :loading="importing" @click="openImportPicker">导入</n-button>
+        <n-button quaternary @click="router.push('/trash')">回收站</n-button>
       </n-space>
       <input
         ref="fileInputRef"
@@ -493,7 +494,7 @@ function formatTime(value?: string): string {
                   <template #trigger>
                     <n-button size="small" type="error" quaternary>删除</n-button>
                   </template>
-                  确定删除「{{ doc.title }}」吗？
+                  确定删除「{{ doc.title }}」吗？将进入回收站。
                 </n-popconfirm>
               </n-space>
               <n-dropdown

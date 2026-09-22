@@ -7,6 +7,7 @@ use App\Http\Resources\DocumentMemberResource;
 use App\Models\Document;
 use App\Models\DocumentMember;
 use App\Models\User;
+use App\Notifications\DocumentSharedNotification;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -63,6 +64,9 @@ class DocumentMemberController extends Controller
             'user_id' => $user->id,
             'role' => $validated['role'],
         ]);
+
+        // 站内通知：文档被共享给该用户
+        $user->notify(new DocumentSharedNotification($document, $member));
 
         return (new DocumentMemberResource($member->load('user:id,name,email')))
             ->response()

@@ -125,7 +125,8 @@ class DocumentTest extends TestCase
             ->deleteJson("/api/documents/{$document->id}")
             ->assertNoContent();
 
-        $this->assertDatabaseMissing('documents', ['id' => $document->id]);
+        // 软删除：进入回收站，数据行保留
+        $this->assertSoftDeleted('documents', ['id' => $document->id]);
     }
 
     public function test_user_cannot_delete_others_document(): void

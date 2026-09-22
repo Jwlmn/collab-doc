@@ -59,6 +59,12 @@ export const router = createRouter({
           component: () => import('../views/DocumentsView.vue'),
           meta: { requiresAuth: true, title: PAGE_TITLE },
         },
+        {
+          path: 'trash',
+          name: 'trash',
+          component: () => import('../views/TrashView.vue'),
+          meta: { requiresAuth: true, title: `回收站 · ${PAGE_TITLE}` },
+        },
       ],
     },
     {

@@ -1,8 +1,8 @@
 # 后续推进路线图（Roadmap）
 
-> 状态：**B1 工程化 + B2 生产就绪均已完成**（2026-09-22）；剩 B3 防丢失与通知 → 主线四按需
+> 状态：**B1 + B2 + B3 全部完成**（2026-09-23）；剩主线四按需点单
 > 前情：M1–M9、打磨 18 项、导入导出、双文档类型、Excel v2 均已完成
-> 质量基线：77 PHPUnit / 70 Vitest / **Playwright E2E 3 组（本机 3 轮稳定）/ CI 绿（run 1cf89f1）**
+> 质量基线：**91 PHPUnit / 70 Vitest / Playwright E2E 3 组通过 / pint 绿 / CI 绿（run 1cf89f1）**
 
 ---
 
@@ -14,8 +14,9 @@
 | 版本控制 | ✅ git 已建立（Jwlmn/collab-doc，tag v0.9-feature-complete） | — |
 | 自动化 | ✅ CI 绿灯（双 job）+ 本机 E2E 三组稳定 | CI 内集成 E2E、a11y 清理待办 |
 | 部署 | ✅ 生产栈可交付：docker compose.prod 一键起（nginx+fpm+hocuspocus+pg/redis），本机演练全流程通过；HTTPS 待公网加 TLS 层 | — |
-| 防丢失 | 文档删除 = **硬删**，无回收站 | 协作产品高频事故点 |
-| 通知 | 评论 @提及的 `mentions` 只存不用，无人被通知 | 闭环缺失 |
+| 防丢失 | ✅ 回收站（软删除 + 恢复/彻底删除 + 协作侧拒绝写入 + document_states 清理） | — |
+| 通知 | ✅ 站内通知闭环（@提及/共享触发 + 顶栏铃铛 + 未读角标 + 跳转） | — |
+| 搜索 | ✅ Excel 单元格内容进全文搜索（rows 模型按类型分流抽取） | — |
 | 其他 | 图片无法插入（无 image 扩展）；存量 a11y 遗留；中文硬编码 | 按需 |
 
 ---
@@ -42,14 +43,14 @@
 
 ## 主线三：防丢失与通知闭环（P1，产品安心感）
 
-- [ ] **回收站（软删除）**：`documents.deleted_at` SoftDeletes；删除进回收站 → 列表「回收站」入口 → 恢复/彻底删除；**协作侧配套**：已删除文档的 collab 连接拒绝写入、`document_states`/versions/comments 级联保留至彻底删除
-- [ ] **站内通知中心**：
-  - 触发：评论被 @提及、文档被共享给自己
-  - `notifications` 表（或复用 mentions 反查）+ 顶栏铃铛 + 未读角标 + 通知列表页（跳转对应文档/评论）
-  - Excel 单元格提及暂不做（无此交互）
-- [ ] **Excel 内容进全文搜索**：协作服务器 rows 模型抽取纯文本写入 `search_text`（复用 M8 的 `onStoreDocument` 管线，替换当前对 XmlFragment 的抽取按类型分流）——当前 Excel 只能按标题搜
+- [x] **回收站（软删除）** ✅（2026-09-23）：`documents.deleted_at` SoftDeletes；列表「回收站」入口（`/trash`）→ 恢复/彻底删除；**协作侧配套**：Laravel 隐式绑定对 trashed 文档 404（collab-token 不可取）+ 协作服务器 `onAuthenticate` 拒绝已删除文档新连接 + `onStoreDocument` 跳过 `deleted_at` 非空行 + 彻底删除时清理 `document_states`；versions/comments/members 由外键级联保留至彻底删除；PHPUnit TrashTest 7 例
+- [x] **站内通知中心** ✅（2026-09-23）：
+  - 触发：评论被 @提及（`MentionNotification`，不含自己）、文档被共享给自己（`DocumentSharedNotification`）
+  - `notifications` 表 + 顶栏铃铛（`NotificationBell.vue`：未读角标、60s 轮询、面板列表、全部已读、点击标已读并跳转对应文档）
+  - Excel 单元格提及暂不做（无此交互）；PHPUnit NotificationTest 6 例
+- [x] **Excel 内容进全文搜索** ✅：协作服务器按文档结构分流（`isExcelDoc` 判 rows/v1 cells → `extractRowsText` 抽单元格文本，MD 走 XmlFragment），复用 `onStoreDocument` 管线写入 `search_text`
 
-**量级**：回收站约 1 天；通知约 1–1.5 天；搜索分流半天
+**量级**：回收站约 1 天；通知约 1–1.5 天；搜索分流半天（实际已全部完成）
 
 ## 主线四：功能深水区（P2，按真实需求点单）
 
@@ -71,7 +72,7 @@
 ```
 B1 工程化基座 ✅ 已完成（git + CI 绿 + E2E 三组）
 B2 生产就绪 ✅ 已完成（编排 + env + 备份演练 + deployment.md）
-B3 防丢失与通知（回收站 + 站内通知 + Excel 搜索分流）  ← 下一步
+B3 防丢失与通知 ✅ 已完成（回收站 + 站内通知 + Excel 搜索分流，2026-09-23）
 ```
 
 - **验收标准**：
@@ -79,7 +80,7 @@ B3 防丢失与通知（回收站 + 站内通知 + Excel 搜索分流）  ← �
   2. 从干净机器按部署文档一次跑通全功能（含 WSS 协同）
   3. 误删文档可恢复；@提及后对方能在站内收到通知并跳转
   4. 搜索框能命中 Excel 单元格内容
-  5. 回归全绿：77+ PHPUnit、70+ Vitest、E2E 冒烟通过
+  5. 回归全绿：91 PHPUnit、70 Vitest、E2E 冒烟通过 —— ✅ 已达标（2026-09-23）
 - **主线四不进 v3**，完成 B1–B3 后按实际使用反馈点单
 
 ## 风险与依赖提示

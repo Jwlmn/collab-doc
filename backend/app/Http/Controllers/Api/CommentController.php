@@ -7,6 +7,7 @@ use App\Http\Resources\CommentResource;
 use App\Models\Comment;
 use App\Models\Document;
 use App\Models\User;
+use App\Notifications\MentionNotification;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -48,6 +49,14 @@ class CommentController extends Controller
             'mentions' => $existingIds === [] ? null : $existingIds,
             'user_id' => $request->user()->id,
         ]);
+
+        // 站内通知：被 @ 的用户（不含评论者自己）
+        $mentionedUsers = User::whereIn('id', $existingIds)
+            ->where('id', '!=', $request->user()->id)
+            ->get();
+        foreach ($mentionedUsers as $mentioned) {
+            $mentioned->notify(new MentionNotification($comment));
+        }
 
         return new CommentResource($comment->load('user:id,name'));
     }

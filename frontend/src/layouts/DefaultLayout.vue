@@ -3,6 +3,7 @@ import { h } from 'vue'
 import { NButton, useMessage } from 'naive-ui'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
+import NotificationBell from '../components/NotificationBell.vue'
 
 const auth = useAuthStore()
 const router = useRouter()
@@ -35,6 +36,7 @@ function handleUserMenu(key: string) {
       <router-link to="/" class="brand">多人实时协作文档</router-link>
       <n-space align="center">
         <template v-if="auth.user">
+          <NotificationBell />
           <n-dropdown :options="[{ key: 'logout', label: renderLogoutLabel }]" @select="handleUserMenu">
             <n-button text>
               {{ auth.user.name }}

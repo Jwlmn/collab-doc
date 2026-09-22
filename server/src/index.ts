@@ -81,6 +81,39 @@ function extractText(root: Y.XmlFragment): string {
   return parts.join('').replace(/\n{2,}/g, '\n').trim()
 }
 
+/** Excel（v2 行模型）→ 纯文本：行间换行、单元格间制表 */
+function extractRowsText(doc: Y.Doc): string {
+  const rows = doc.getArray<Y.Map<string | { v: string }>>('rows')
+  const lines: string[] = []
+
+  rows.forEach((row) => {
+    const cells: string[] = []
+    let maxCol = -1
+    row.forEach((value, key) => {
+      const col = Number(key)
+      if (Number.isFinite(col) && col > maxCol) maxCol = col
+    })
+    for (let c = 0; c <= maxCol; c++) {
+      const value = row.get(String(c))
+      if (value === undefined) {
+        cells.push('')
+      } else if (typeof value === 'string') {
+        cells.push(value)
+      } else {
+        cells.push(typeof value.v === 'string' ? value.v : '')
+      }
+    }
+    lines.push(cells.join('\t'))
+  })
+
+  return lines.join('\n').trim()
+}
+
+/** 判断 ydoc 是否为 Excel 结构（行模型或 v1 cells map） */
+function isExcelDoc(doc: Y.Doc): boolean {
+  return doc.getArray('rows').length > 0 || doc.getMap('cells').size > 0
+}
+
 const server = Server.configure({
   port: PORT,
   name: 'collab-doc-server',
@@ -91,6 +124,16 @@ const server = Server.configure({
     if (!claims) {
       console.warn(`[collab] auth rejected: ${documentName}`)
       throw new Error('Invalid or expired collab token')
+    }
+
+    // 回收站中的文档拒绝新连接（防止删除后继续写入）
+    const idMatch = /^doc-(\d+)$/.exec(documentName)
+    if (idMatch) {
+      const res = await pool.query('SELECT deleted_at FROM documents WHERE id = $1', [idMatch[1]])
+      if (res.rows.length === 0 || res.rows[0].deleted_at !== null) {
+        console.warn(`[collab] auth rejected (deleted): ${documentName}`)
+        throw new Error('Document has been deleted')
+      }
     }
 
     // viewer 只读：服务端拒绝其写入的 Y.js 更新
@@ -130,14 +173,19 @@ const server = Server.configure({
     console.log(`[collab] connect: ${documentName}`)
   },
   // 文档内容落库时同步抽取纯文本，供 Laravel 全文检索；同时刷新 updated_at
+  // 按文档结构分流：Excel（行模型/v1 cells）抽单元格文本，MD 抽 XmlFragment
   async onStoreDocument({ documentName, document }) {
     const match = /^doc-(\d+)$/.exec(documentName)
     if (!match) return
 
-    const text = extractText(document.getXmlFragment('default'))
     try {
+      const text = isExcelDoc(document)
+        ? extractRowsText(document)
+        : extractText(document.getXmlFragment('default'))
+
+      // deleted_at 过滤：回收站文档不再回写 search_text/updated_at
       await pool.query(
-        'UPDATE documents SET search_text = $1, updated_at = now() WHERE id = $2',
+        'UPDATE documents SET search_text = $1, updated_at = now() WHERE id = $2 AND deleted_at IS NULL',
         [text, match[1]],
       )
     } catch (err) {
