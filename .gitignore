@@ -27,3 +27,6 @@ frontend/playwright-report/
 
 # 系统文件
 .DS_Store
+
+# 备份产物
+backups/

@@ -1,0 +1,12 @@
+# 构建上下文瘦身 / 防止宿主产物覆盖镜像内依赖
+.git
+**/node_modules
+backend/vendor
+frontend/dist
+frontend/test-results
+frontend/playwright-report
+backups
+docs
+*.log
+.env
+.env.*

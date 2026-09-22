@@ -1,0 +1,105 @@
+# 生产形态全栈编排（本机演练 / 服务器部署通用）
+#
+# 启动：
+#   APP_KEY=base64:...（php artisan key:generate --show）
+#   docker compose -f docker-compose.prod.yml up -d --build
+#
+# 暴露面：仅 web:8080；db/redis/app/collab 仅内网
+# 变量替换读取项目根 .env（compose 自动加载同目录 .env）
+
+name: collab-doc
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USERNAME:-collab}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-secret}
+      POSTGRES_DB: ${DB_DATABASE:-collab_doc}
+    volumes:
+      - prod_postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:-collab} -d ${DB_DATABASE:-collab_doc}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - prod_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  app:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    restart: unless-stopped
+    environment: &app-env
+      APP_ENV: ${APP_ENV:-production}
+      APP_DEBUG: ${APP_DEBUG:-false}
+      APP_URL: ${APP_URL:-http://localhost:8080}
+      APP_KEY: ${APP_KEY:?请在 .env 设置 APP_KEY（php artisan key:generate --show）}
+      COLLAB_SECRET: ${COLLAB_SECRET:?请在 .env 设置 COLLAB_SECRET（openssl rand -hex 32）}
+      DB_CONNECTION: pgsql
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_DATABASE: ${DB_DATABASE:-collab_doc}
+      DB_USERNAME: ${DB_USERNAME:-collab}
+      DB_PASSWORD: ${DB_PASSWORD:-secret}
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      CACHE_STORE: redis
+      QUEUE_CONNECTION: redis
+      SESSION_DRIVER: redis
+      SESSION_SECURE_COOKIE: "false"   # 上线启用 HTTPS 后改 true
+      # Sanctum 按 host:port 匹配，必须包含带端口的形式
+      SANCTUM_STATEFUL_DOMAINS: ${SANCTUM_STATEFUL_DOMAINS:-localhost,localhost:8080,127.0.0.1,127.0.0.1:8080}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  collab:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    restart: unless-stopped
+    environment:
+      <<: *app-env        # 复用 db/redis/密钥配置
+      COLLAB_PORT: "1234"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  web:
+    build:
+      context: .
+      dockerfile: web/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "${WEB_PORT:-8080}:80"
+    depends_on:
+      - app
+      - collab
+    healthcheck:
+      # 用 127.0.0.1 而非 localhost：busybox 会解析到 IPv6 ::1，nginx 仅监听 IPv4
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/up || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+volumes:
+  prod_postgres_data:
+  prod_redis_data:

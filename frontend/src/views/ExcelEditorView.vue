@@ -6,6 +6,7 @@ import { HocuspocusProvider } from '@hocuspocus/provider'
 import * as Y from 'yjs'
 import { useAuthStore } from '../stores/auth'
 import { api, getApiErrorMessage } from '../utils/request'
+import { getCollabUrl } from '../utils/collab'
 import { useImportFlowStore } from '../stores/importFlow'
 import { exportGridToXlsx, columnLabel } from '../io/cells'
 import { SheetModel, columnLabels, DEFAULT_COLS, type CellStyle } from '../io/sheet-model'
@@ -598,7 +599,7 @@ onMounted(async () => {
   model = new SheetModel(ydoc)
 
   provider = new HocuspocusProvider({
-    url: import.meta.env.VITE_COLLAB_URL ?? 'ws://127.0.0.1:1234',
+    url: getCollabUrl(),
     name: `doc-${docId.value}`,
     document: ydoc,
     token: collabToken,

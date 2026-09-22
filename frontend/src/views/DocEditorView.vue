@@ -12,6 +12,7 @@ import { HocuspocusProvider } from '@hocuspocus/provider'
 import * as Y from 'yjs'
 import { useAuthStore } from '../stores/auth'
 import { api, getApiErrorMessage } from '../utils/request'
+import { getCollabUrl } from '../utils/collab'
 import VersionDrawer from '../components/VersionDrawer.vue'
 import CommentDrawer from '../components/CommentDrawer.vue'
 import EditorToolbar from '../components/EditorToolbar.vue'
@@ -247,7 +248,7 @@ onMounted(async () => {
   ydoc = new Y.Doc()
 
   provider = new HocuspocusProvider({
-    url: import.meta.env.VITE_COLLAB_URL ?? 'ws://127.0.0.1:1234',
+    url: getCollabUrl(),
     name: `doc-${docId.value}`,
     document: ydoc,
     token: collabToken,
