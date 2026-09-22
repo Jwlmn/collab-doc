@@ -7,7 +7,8 @@
 # 暴露面：仅 web:8080；db/redis/app/collab 仅内网
 # 变量替换读取项目根 .env（compose 自动加载同目录 .env）
 
-name: collab-doc
+# 独立 project 名：避免与 dev 栈（默认 project=目录名 collab-doc）冲突导致互相互顶
+name: collab-doc-prod
 
 services:
   postgres:
