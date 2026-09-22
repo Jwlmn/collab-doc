@@ -1,8 +1,8 @@
 # 后续推进路线图（Roadmap）
 
-> 状态：**待执行**（2026-09-22 制定）
-> 前情：M1–M9 里程碑、打磨计划 18 项、导入导出、双文档类型、Excel v2「表格引擎」均已完成
-> 质量基线：后端 77 PHPUnit / 前端 70 Vitest / 三端 tsc + build + pint 全绿
+> 状态：**B1 工程化基座已完成**（2026-09-22）；B2 生产就绪、B3 防丢失与通知 待执行
+> 前情：M1–M9、打磨 18 项、导入导出、双文档类型、Excel v2 均已完成
+> 质量基线：77 PHPUnit / 70 Vitest / **Playwright E2E 3 组（本机 3 轮稳定）/ CI 绿（run 1cf89f1）**
 
 ---
 
@@ -11,8 +11,8 @@
 | 维度 | 现状 | 缺口 |
 |------|------|------|
 | 功能 | 文档/协作/权限/搜索/导入导出/双类型/表格引擎 全链路可用 | 深水功能待按需（见主线四） |
-| 版本控制 | **不是 git 仓库，全部代码零版本保护** | ⚠️ 最紧急 |
-| 自动化 | 无 CI、无 E2E（每轮验收靠手工浏览器走查） | 质量兜底缺失 |
+| 版本控制 | ✅ git 已建立（Jwlmn/collab-doc，tag v0.9-feature-complete） | — |
+| 自动化 | ✅ CI 绿灯（双 job）+ 本机 E2E 三组稳定 | CI 内集成 E2E、a11y 清理待办 |
 | 部署 | 三进程裸跑宿主机（vite dev + artisan serve + tsx）；RoadRunner 二进制未装（GitHub 403）；docker 仅 pg/redis | 无法交付上线 |
 | 防丢失 | 文档删除 = **硬删**，无回收站 | 协作产品高频事故点 |
 | 通知 | 评论 @提及的 `mentions` 只存不用，无人被通知 | 闭环缺失 |
@@ -23,9 +23,9 @@
 ## 主线一：工程化基座（P0，一切的前提）
 
 - [x] **Git 仓库初始化 + 首次提交** ✅（2026-09-22）：远程 `git@github.com:Jwlmn/collab-doc.git`，main 分支 329 文件/43KB 行已推送，标签 `v0.9-feature-complete` 已发布；提交前完成安全审查（无 .env/vendor/node_modules/sqlite/密钥入库，328KB pack）
-- [ ] **CI（GitHub Actions）**：push/PR 触发 —— 后端 `pint --test` + `php artisan test`；前端 `vue-tsc` + `vitest` + `vite build`
-- [ ] **Playwright E2E 冒烟**：把反复手工验收的流程固化 —— 登录 → 新建 MD/Excel → 编辑保存 → **双上下文协同断言** → 导入导出往返 → 搜索；CI 中跑（需 compose 起 pg/redis）
-- [ ] 存量 a11y 遗留清理（polish 文档中标注未完成的 `name/id` 批量补齐等）
+- [x] **CI（GitHub Actions）** ✅（2026-09-22）：双 job 已转绿（run 1cf89f1）—— 后端 pint+phpunit（sqlite 内存 + 自动生成 APP_KEY）、前端 vue-tsc(-b 严格模式)+vitest+build；PR/push 触发
+- [x] **Playwright E2E 冒烟** ✅（2026-09-22，本机）：三组 spec（注册→MD编辑→内容搜索 / Excel编辑→刷新持久 / 双页面实时协同），系统 Chrome 免下载，本机连跑 3 轮 3/3 稳定；`npm run test:e2e`（需 NO_PROXY=localhost 绕系统代理）；**CI 内集成 E2E 仍待办**（需 compose pg/redis + 三服务编排）
+- [ ] 存量 a11y 遗留清理（polish 文档中标注未完成的 `name/id` 批量补齐等）——仍在待办
 
 **量级**：git+CI 约半天；E2E 骨架约 1 天
 
@@ -69,7 +69,7 @@
 **主题：可交付 v3 ——「先有版本控制，再能上线，再防丢，再通知」**
 
 ```
-B1 工程化基座（git init ✅已完成 + CI + Playwright 冒烟）  ← 剩 CI/E2E
+B1 工程化基座 ✅ 已完成（git + CI 绿 + E2E 三组）
 B2 生产就绪（全栈编排 + env 生产化 + 部署演练）
 B3 防丢失与通知（回收站 + 站内通知 + Excel 搜索分流）
 ```
@@ -84,6 +84,6 @@ B3 防丢失与通知（回收站 + 站内通知 + Excel 搜索分流）
 
 ## 风险与依赖提示
 
-1. GitHub 403（本机代理环境拉 Release 受限）——RoadRunner/Playwright 浏览器下载可能同样受阻，预留镜像源/缓存方案
+1. GitHub 403（本机代理环境拉 Release 受限）——RoadRunner 仍未装（Playwright 已用系统 Chrome 绕过）；本机跑 E2E 需 NO_PROXY=localhost
 2. 多端同时首次打开「v1 遗留 Excel 文档」的迁移并发窗口（极小，打开一次即收敛）
 3. 列级并发插删最后写赢（已知边界，文档已标注）
