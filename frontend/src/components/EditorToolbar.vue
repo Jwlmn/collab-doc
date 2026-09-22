@@ -35,10 +35,10 @@ function isActive(name: string, attributes?: Record<string, unknown>): boolean {
   return props.editor?.isActive(name, attributes) ?? false
 }
 
-function run(command: (chain: ReturnType<NonNullable<Editor['chain']>>) => unknown): void {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function run(command: (chain: any) => any): void {
   if (!props.editor || props.readonly) return
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  command(props.editor.chain().focus() as any).run()
+  command(props.editor.chain().focus()).run()
 }
 
 /** 光标是否在表格内（驱动菜单切换） */

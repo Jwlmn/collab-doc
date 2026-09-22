@@ -65,7 +65,7 @@ function inlineChildren(nodes: JSONContent[] | undefined, ctx: InlineContext = {
   return out
 }
 
-function listLevel(type: string, depth: number): number {
+function listLevel(_type: string, depth: number): number {
   return Math.min(depth, 5)
 }
 
@@ -171,8 +171,8 @@ function plainInline(node: JSONContent): string {
     .join('')
 }
 
-function listToDocx(list: JSONContent, ordered: boolean, depth: number): Paragraph[] {
-  const out: Paragraph[] = []
+function listToDocx(list: JSONContent, ordered: boolean, depth: number): (Paragraph | Table)[] {
+  const out: (Paragraph | Table)[] = []
   const items = list.content ?? []
 
   for (const item of items) {

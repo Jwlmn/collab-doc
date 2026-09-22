@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useMessage } from 'naive-ui'
 import { HocuspocusProvider } from '@hocuspocus/provider'
@@ -334,13 +334,13 @@ const TEXT_COLORS = ['#1f2329', '#d03050', '#f0883e', '#18a058', '#2080f0', '#95
 const BG_COLORS = ['#fff3bf', '#d3f9d8', '#d0ebff', '#ffe3e3', '#e5dbff', '#f1f3f5']
 
 /** 对选区内所有格应用样式补丁（apply 为函数以支持 toggle 语义） */
-function applyToSelection(mutate: (get: (r: number, c: number) => CellStyle, set: (r: number, c: number, patch: Parameters<SheetModel['applyStyle']>[2]) => void) => void): void {
+type StylePatch = Parameters<SheetModel['applyStyle']>[2]
+
+function applyToSelection(mutate: (get: (r: number, c: number) => CellStyle, set: (r: number, c: number, patch: StylePatch) => void) => void): void {
   if (!model || isReadonly.value) return
-  const rg = range.value
-  model.ydoc.transact(() => {
+  model.transact(() => {
     const get = (r: number, c: number) => model!.getStyle(r, c)
-    const set = (r: number, c: number, patch: Parameters<SheetModel['applyStyle']>[2]) =>
-      model!.applyStyle(r, c, patch)
+    const set = (r: number, c: number, patch: StylePatch) => model!.applyStyle(r, c, patch)
     mutate(get, set)
   })
 }
@@ -363,7 +363,7 @@ function toggleBold(): void {
   })
 }
 
-function applyStyleToSelection(patch: Partial<CellStyle>): void {
+function applyStyleToSelection(patch: StylePatch): void {
   const rg = range.value
   applyToSelection((_get, set) => {
     for (let r = rg.r1; r <= rg.r2; r++) {
@@ -391,7 +391,7 @@ const selectionBold = computed(() => {
 function handleRowMenu(key: string): void {
   if (!model || isReadonly.value) return
   const r = focus.value.r
-  model.ydoc.transact(() => {
+  model.transact(() => {
     if (key === 'insertAbove') model!.insertRow(r)
     else if (key === 'insertBelow') model!.insertRow(r + 1)
     else if (key === 'delete') model!.deleteRow(r)
@@ -402,7 +402,7 @@ function handleRowMenu(key: string): void {
 function handleColMenu(key: string): void {
   if (!model || isReadonly.value) return
   const c = focus.value.c
-  model.ydoc.transact(() => {
+  model.transact(() => {
     if (key === 'insertLeft') model!.insertCol(c)
     else if (key === 'insertRight') model!.insertCol(c + 1)
     else if (key === 'delete') model!.deleteCol(c)
@@ -432,12 +432,13 @@ function remoteCursorAt(r: number, c: number): { name: string; color: string } |
 }
 
 function refreshPresence(): void {
-  if (!provider) return
+  const awareness = provider?.awareness
+  if (!provider || !awareness) return
   const seen = new Map<string, Collaborator>()
   const cursors = new Map<string, { name: string; color: string }>()
-  const myId = provider.awareness.clientID
+  const myId = awareness.clientID
 
-  provider.awareness.getStates().forEach((state, clientId) => {
+  awareness.getStates().forEach((state, clientId) => {
     const typed = state as { user?: Collaborator; cell?: { r: number; c: number } }
     if (typed.user?.name) {
       if (!seen.has(typed.user.name)) {
@@ -458,7 +459,7 @@ function refreshPresence(): void {
 
 /** 向协同伙伴播报当前焦点格 */
 function broadcastCell(): void {
-  provider?.awareness.setLocalStateField('cell', { r: focus.value.r, c: focus.value.c })
+  provider?.awareness?.setLocalStateField('cell', { r: focus.value.r, c: focus.value.c })
 }
 
 const userColor = computed(() => {
@@ -483,8 +484,9 @@ async function handleRename(): Promise<void> {
   }
   try {
     const { data } = await api.put(`/documents/${docId.value}`, { title })
-    meta.value = data.data
-    titleEditing.value = meta.value.title
+    const updated: DocumentMeta = data.data
+    meta.value = updated
+    titleEditing.value = updated.title
   } catch (error) {
     titleEditing.value = meta.value?.title ?? ''
     message.error(getApiErrorMessage(error))
@@ -521,13 +523,6 @@ async function handleExport(): Promise<void> {
 }
 
 function handleKeydown(event: KeyboardEvent): void {
-  const target = event.target as HTMLElement | null
-  const typing =
-    !!target &&
-    (target.tagName === 'INPUT' ||
-      target.tagName === 'TEXTAREA' ||
-      target.isContentEditable)
-
   if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
     if (!commentDrawerVisible.value) {
       event.preventDefault()
@@ -544,13 +539,14 @@ onMounted(async () => {
 
   try {
     const { data } = await api.get(`/documents/${docId.value}`)
-    meta.value = data.data
-    titleEditing.value = meta.value.title
-    document.title = `${meta.value.title} · ${PAGE_TITLE}`
+    const loaded: DocumentMeta = data.data
+    meta.value = loaded
+    titleEditing.value = loaded.title
+    document.title = `${loaded.title} · ${PAGE_TITLE}`
 
     // 防呆：md 文档误入表格路由
-    if ((meta.value.type ?? 'md') === 'md') {
-      await router.replace(`/doc/${meta.value.id}`)
+    if ((loaded.type ?? 'md') === 'md') {
+      await router.replace(`/doc/${loaded.id}`)
       return
     }
   } catch (error) {
@@ -567,6 +563,17 @@ onMounted(async () => {
       document.title = title ? `${title} · ${PAGE_TITLE}` : PAGE_TITLE
     },
   )
+
+  // P0-2：新建来源进入时聚焦标题（用户已交互则不抢焦点）
+  if (route.query.new !== undefined) {
+    await nextTick()
+    const active = document.activeElement
+    const inTitle = titleInputRef.value?.$el?.contains(active ?? null) ?? false
+    if (!active || active === document.body || inTitle) {
+      titleInputRef.value?.$el?.querySelector('input')?.focus()
+    }
+    void router.replace({ query: {} })
+  }
 
   try {
     const { data } = await api.get(`/documents/${docId.value}/comments/unread`)
@@ -597,8 +604,8 @@ onMounted(async () => {
     token: collabToken,
   })
 
-  provider.on('status', (event) => {
-    connectionStatus.value = event.status as typeof connectionStatus.value
+  provider.on('status', (event: { status: 'connecting' | 'connected' | 'disconnected' }) => {
+    connectionStatus.value = event.status
     if (event.status !== 'connected') {
       synced.value = false
       syncTick.value++
@@ -613,11 +620,11 @@ onMounted(async () => {
   })
 
   // awareness：先播报用户，再跟随焦点播报单元格
-  provider.awareness.setLocalStateField('user', {
+  provider.awareness?.setLocalStateField('user', {
     name: auth.user?.name ?? '匿名',
     color: userColor.value,
   })
-  provider.awareness.on('change', refreshPresence)
+  provider.awareness?.on('change', refreshPresence)
   refreshPresence()
 
   stopObserve = model.observe(() => {

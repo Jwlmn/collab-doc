@@ -63,6 +63,19 @@ export function columnLabel(index: number): string {
   return label
 }
 
+
+/** write-excel-file 的 Sheet[] 重载在复杂字面量下推断困难，统一经此入口下载 */
+export async function writeSheetsToFile(
+  sheets: unknown,
+  fileName: string,
+): Promise<void> {
+  // overload 联合签名对宽泛字面量不友好，这里收窄为 toFile 调用
+  const writer = writeXlsxFile(sheets as never) as unknown as {
+    toFile(name: string): Promise<void>
+  }
+  await writer.toFile(fileName)
+}
+
 interface XlsxCell {
   value: string | number
   type: typeof String | typeof Number
@@ -92,13 +105,16 @@ export async function exportCellsToXlsx(cells: CellMap, title: string): Promise<
     return line
   })
 
-  await writeXlsxFile([
-    {
-      sheet: title.slice(0, 31) || 'Sheet1',
-      data,
-      columns: Array.from({ length: maxCols }, () => ({ width: 16 })),
-    },
-  ]).toFile(`${title || '导出'}.xlsx`)
+  await writeSheetsToFile(
+    [
+      {
+        sheet: title.slice(0, 31) || 'Sheet1',
+        data,
+        columns: Array.from({ length: maxCols }, () => ({ width: 16 })),
+      },
+    ],
+    `${title || '导出'}.xlsx`,
+  )
 }
 
 interface StyledXlsxCell {
@@ -153,11 +169,14 @@ export async function exportGridToXlsx(grid: SheetCell[][], title: string): Prom
     return line
   })
 
-  await writeXlsxFile([
-    {
-      sheet: title.slice(0, 31) || 'Sheet1',
-      data,
-      columns: Array.from({ length: maxCols }, () => ({ width: 16 })),
-    },
-  ]).toFile(`${title || '导出'}.xlsx`)
+  await writeSheetsToFile(
+    [
+      {
+        sheet: title.slice(0, 31) || 'Sheet1',
+        data,
+        columns: Array.from({ length: maxCols }, () => ({ width: 16 })),
+      },
+    ],
+    `${title || '导出'}.xlsx`,
+  )
 }

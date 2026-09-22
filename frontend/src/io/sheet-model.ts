@@ -46,7 +46,11 @@ export class SheetModel {
   /** 已挂观察器的行（避免重复 observe） */
   private readonly observedRows = new WeakSet<Y.Map<CellValue>>()
 
-  constructor(private readonly ydoc: Y.Doc) {
+  // erasableSyntaxOnly：禁用构造参数属性，显式声明
+  private readonly ydoc: Y.Doc
+
+  constructor(ydoc: Y.Doc) {
+    this.ydoc = ydoc
     this.rows = ydoc.getArray<Y.Map<CellValue>>('rows')
   }
 
@@ -90,7 +94,7 @@ export class SheetModel {
     const value = this.getCell(row, col)
     if (value === undefined || value === null || typeof value !== 'object') return {}
     if (!('v' in value)) return {}
-    const { v: _v, ...style } = value as Record<string, unknown>
+    const { v: _v, ...style } = value as unknown as Record<string, unknown>
     return style as CellStyle
   }
 
@@ -199,6 +203,11 @@ export class SheetModel {
         .sort((a, b) => a[0] - b[0])
       for (const [k, v] of kept) row.set(String(k), v)
     })
+  }
+
+  /** 在 Y 事务中执行批量操作（对外暴露，避免外部触碰私有 ydoc） */
+  transact(fn: () => void): void {
+    this.ydoc.transact(fn)
   }
 
   /** 深度观察（rows 结构 + 各行内容）；返回清理函数 */

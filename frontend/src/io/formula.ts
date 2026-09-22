@@ -141,12 +141,16 @@ export interface FormulaContext {
 
 class Parser {
   private pos = 0
+  // erasableSyntaxOnly：禁用构造参数属性，显式声明
+  private readonly tokens: Token[]
+  private readonly ctx: FormulaContext
+  private readonly seen: Set<string>
 
-  constructor(
-    private readonly tokens: Token[],
-    private readonly ctx: FormulaContext,
-    private readonly seen: Set<string>,
-  ) {}
+  constructor(tokens: Token[], ctx: FormulaContext, seen: Set<string>) {
+    this.tokens = tokens
+    this.ctx = ctx
+    this.seen = seen
+  }
 
   private peek(): Token | undefined {
     return this.tokens[this.pos]

@@ -217,7 +217,7 @@ async function handleDelete(doc: DocumentMeta) {
 }
 
 /** 移动端「⋯」菜单：删除用对话框确认（无 popconfirm 宿主） */
-function ownerMenuOptions(doc: DocumentMeta): DropdownOption[] {
+function ownerMenuOptions(_doc: DocumentMeta): DropdownOption[] {
   return [
     { key: 'share', label: '共享设置' },
     { key: 'rename', label: '重命名' },

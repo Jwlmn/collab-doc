@@ -52,7 +52,8 @@ export async function buildTablesXlsxBlob(doc: JSONContent, title: string): Prom
     }
   })
 
-  return writeXlsxFile(sheets).toBlob()
+  const writer = writeXlsxFile(sheets as never) as unknown as { toBlob(): Promise<Blob> }
+  return writer.toBlob()
 }
 
 /** 文档表格 → 触发浏览器下载 .xlsx */

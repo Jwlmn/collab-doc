@@ -125,9 +125,10 @@ const userColor = computed(() => {
 })
 
 function refreshCollaborators(): void {
-  if (!provider) return
+  const awareness = provider?.awareness
+  if (!awareness) return
   const seen = new Map<string, Collaborator>()
-  provider.awareness.getStates().forEach((state) => {
+  awareness.getStates().forEach((state) => {
     const user = (state as { user?: Collaborator }).user
     if (user?.name && !seen.has(user.name)) {
       seen.set(user.name, { name: user.name, color: user.color ?? '#888' })
@@ -197,13 +198,14 @@ onMounted(async () => {
 
   try {
     const { data } = await api.get(`/documents/${docId.value}`)
-    meta.value = data.data
-    titleEditing.value = meta.value.title
-    document.title = `${meta.value.title} · ${PAGE_TITLE}`
+    const loaded: DocumentMeta = data.data
+    meta.value = loaded
+    titleEditing.value = loaded.title
+    document.title = `${loaded.title} · ${PAGE_TITLE}`
 
     // 防呆：excel 文档误入富文本路由
-    if (meta.value.type === 'excel') {
-      await router.replace(`/sheet/${meta.value.id}`)
+    if (loaded.type === 'excel') {
+      await router.replace(`/sheet/${loaded.id}`)
       return
     }
   } catch (error) {
@@ -251,8 +253,8 @@ onMounted(async () => {
     token: collabToken,
   })
 
-  provider.on('status', (event) => {
-    connectionStatus.value = event.status as typeof connectionStatus.value
+  provider.on('status', (event: { status: 'connecting' | 'connected' | 'disconnected' }) => {
+    connectionStatus.value = event.status
     if (event.status !== 'connected') {
       synced.value = false
       syncTick.value++
@@ -268,7 +270,7 @@ onMounted(async () => {
     syncTick.value++
   })
 
-  provider.awareness.on('change', () => {
+  provider.awareness?.on('change', () => {
     refreshCollaborators()
   })
   refreshCollaborators()
@@ -355,8 +357,9 @@ async function handleRename() {
   }
   try {
     const { data } = await api.put(`/documents/${docId.value}`, { title })
-    meta.value = data.data
-    titleEditing.value = meta.value.title
+    const updated: DocumentMeta = data.data
+    meta.value = updated
+    titleEditing.value = updated.title
   } catch (error) {
     titleEditing.value = meta.value?.title ?? ''
     message.error(getApiErrorMessage(error))
