@@ -81,16 +81,47 @@ const dataRevision = ref(0)
 
 const MIN_COLS = DEFAULT_COLS
 
-/** 显示行数 = 结构行数；显示列数 = max(最小列, 数据边界+余量) */
+/**
+ * 视口覆盖行列：按 grid-wrap 实际尺寸计算渲染下限，
+ * 保证任意分辨率（宽屏/高屏）下网格线都铺满可视区——
+ * 超出数据范围的单元格读出为空、可直接编辑（ensureRow 自动补齐数据行）。
+ */
+const gridWrapRef = ref<HTMLElement | null>(null)
+const coverRows = ref(0)
+const coverCols = ref(0)
+let coverObserver: ResizeObserver | null = null
+
+/** 与 .sheet-grid th/td 样式保持一致 */
+const CELL_H = 30
+const CELL_W = 96
+const CORNER_W = 48
+
+function refreshCover(): void {
+  const el = gridWrapRef.value
+  if (!el) return
+  // +1 吸收 sticky 表头占位与亚像素取整误差
+  coverRows.value = Math.ceil(el.clientHeight / CELL_H) + 1
+  coverCols.value = Math.ceil(Math.max(el.clientWidth - CORNER_W, 0) / CELL_W) + 1
+}
+
+watch(gridWrapRef, (el) => {
+  coverObserver?.disconnect()
+  if (!el) return
+  coverObserver = new ResizeObserver(() => refreshCover())
+  coverObserver.observe(el)
+  refreshCover()
+})
+
+/** 显示行数 = max(结构行数, 视口覆盖)；列同理 */
 const displayRows = computed(() => {
   void dataRevision.value
-  return model?.rowCount ?? 0
+  return Math.max(model?.rowCount ?? 0, coverRows.value)
 })
 
 const displayCols = computed(() => {
   void dataRevision.value
-  if (!model) return MIN_COLS
-  return Math.max(MIN_COLS, model.colCount + 3)
+  if (!model) return Math.max(MIN_COLS, coverCols.value)
+  return Math.max(MIN_COLS, model.colCount + 3, coverCols.value)
 })
 
 const columnHeaders = computed(() => columnLabels(displayCols.value))
@@ -243,6 +274,11 @@ function nextFocus(): void {
 function commitEdit(): void {
   if (!editing.value || !model) return
   const { r, c } = editing.value
+  // 视口补出的空白行提交空内容时不落库，避免 ensureRow 误垫出空数据行
+  if (draft.value === '' && r >= model.rowCount) {
+    editing.value = null
+    return
+  }
   model.setCell(r, c, draft.value)
   editing.value = null
 }
@@ -693,6 +729,8 @@ onBeforeUnmount(() => {
   window.removeEventListener('keydown', handleKeydown)
   window.removeEventListener('mouseup', handleGlobalMouseUp)
   window.removeEventListener('pointerdown', handlePointerDown, true)
+  coverObserver?.disconnect()
+  coverObserver = null
   stopObserve?.()
   provider?.destroy()
   ydoc?.destroy()
@@ -861,6 +899,7 @@ onBeforeUnmount(() => {
 
     <div v-else class="sheet-surface">
       <div
+        ref="gridWrapRef"
         class="grid-wrap"
         tabindex="0"
         role="grid"
@@ -918,10 +957,6 @@ onBeforeUnmount(() => {
           </tbody>
         </table>
       </div>
-      <div class="grid-hint">
-        点按选中 · 双击编辑（触屏点按编辑，支持中文输入法）· 拖动 / Shift+点按框选 · Enter 确认 · Esc 取消 · 方向键与 Tab 导航
-        · 公式示例：=A1+B2、=SUM(A1:A9)
-      </div>
     </div>
 
     <CommentDrawer
@@ -942,6 +977,9 @@ onBeforeUnmount(() => {
     <ShareModal v-model:show="shareVisible" :document-id="docId" />
 
     <n-modal v-model:show="helpVisible" preset="card" title="快捷键" style="width: 440px; max-width: 92vw">
+      <n-text depth="3" style="display: block; margin-bottom: 12px; font-size: 13px">
+        双击单元格编辑（触屏点按编辑，支持中文输入法）· 拖动 / Shift+点按框选 · 公式示例：=A1+B2、=SUM(A1:A9)
+      </n-text>
       <n-table :bordered="false" :single-line="false" size="small">
         <thead>
           <tr><th>快捷键</th><th>作用</th></tr>
@@ -962,10 +1000,12 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .sheet-page {
-  min-height: 100vh;
-  min-height: 100dvh; /* 移动端地址栏伸缩时视口高度跟随 */
+  /* 固定视口高：页面自身不滚动，滚动完全交给内层网格 */
+  height: 100vh;
+  height: 100dvh; /* 移动端地址栏伸缩时高度跟随 */
   display: flex;
   flex-direction: column;
+  overflow: hidden;
   background: var(--bg-page);
 }
 .sheet-topbar {
@@ -1023,35 +1063,28 @@ onBeforeUnmount(() => {
   padding-top: 24px;
 }
 .sheet-surface {
+  /* 全屏铺满：去居中卡片，全宽全高白底 */
   flex: 1;
-  max-width: 1200px;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
   width: 100%;
-  margin: 16px auto;
   background: var(--bg-surface);
-  border-radius: 8px;
-  box-shadow: var(--shadow-card);
-  overflow: auto;
-  padding-bottom: 8px;
+  overflow: hidden;
 }
 .skeleton-surface {
   padding: 32px;
 }
 .grid-wrap {
   outline: none;
+  flex: 1;
+  min-height: 0;
   overflow: auto;
-  max-height: calc(100vh - 210px);
-  max-height: calc(100dvh - 210px);
   cursor: cell;
 }
 .grid-wrap:focus-visible {
   outline: 2px solid #2080f0;
   outline-offset: -2px;
-}
-.grid-hint {
-  padding: 8px 12px;
-  font-size: 12px;
-  color: #999;
-  border-top: 1px solid var(--border-faint);
 }
 .sheet-grid {
   border-collapse: collapse;
