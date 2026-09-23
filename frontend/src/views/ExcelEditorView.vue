@@ -109,9 +109,11 @@ const range = computed(() => ({
 
 const editing = ref<{ r: number; c: number } | null>(null)
 const draft = ref('')
-/** mousedown 起点与是否发生拖动（区分「点选进入编辑」与「拖拽框选」） */
+/** mousedown 起点与是否发生拖动（区分「点按选中」与「拖拽框选」） */
 const pressedCell = ref<{ r: number; c: number } | null>(null)
 const dragMoved = ref(false)
+/** 最近一次指针类型：鼠标单击只选中（双击编辑），触屏点按保持直接编辑 */
+let lastPointerType = 'mouse'
 
 function cellRaw(r: number, c: number): string {
   void dataRevision.value
@@ -164,8 +166,13 @@ function selectCell(r: number, c: number, extend = false): void {
 
 function handleCellMouseDown(r: number, c: number, event: MouseEvent): void {
   if (event.button !== 0) return
+  // 编辑态且点在当前格（编辑框内）：交给 input 自己处理——
+  // 不 preventDefault（保留框选文字/点移光标的默认行为）、不抢焦点
+  // （抢焦点会触发 input blur → commitEdit，导致一框选就退出编辑）
+  if (isEditing(r, c)) return
   // preventDefault 会阻断浏览器默认的「点击聚焦最近 tabindex 祖先」，
   // 这里手动让网格容器获得焦点，键盘事件才能进入 handleGridKeydown
+  event.preventDefault()
   const wrap = (event.currentTarget as HTMLElement).closest('.grid-wrap')
   ;(wrap as HTMLElement | null)?.focus()
 
@@ -190,38 +197,46 @@ function handleCellMouseEnter(r: number, c: number): void {
 
 function handleGlobalMouseUp(): void {
   dragging.value = false
-  // 普通单击（未拖动、非 shift）→ 选中并进入编辑：
-  // 让输入法(IME)/中文键入直接可用，无需先双击
+  // 触屏点按（未拖动、非 shift）→ 选中并直接进入编辑（移动端无双击语义，且便于 IME）
+  // 鼠标单击只选中，进入编辑由双击触发（传统 Excel 行为）
   const pressed = pressedCell.value
   pressedCell.value = null
   if (!pressed || dragMoved.value) return
+  if (lastPointerType !== 'touch') return
   if (pressed.r === focus.value.r && pressed.c === focus.value.c && !isReadonly.value) {
     startEdit()
   }
 }
 
+/** 双击单元格进入编辑（传统 Excel 行为） */
+function handleCellDblClick(event: MouseEvent): void {
+  if (isReadonly.value) return
+  event.preventDefault()
+  startEdit()
+}
+
+/** 记录最近指针类型（mouse/touch），供点按/双击行为分流 */
+function handlePointerDown(event: PointerEvent): void {
+  lastPointerType = event.pointerType || 'mouse'
+}
+
 function startEdit(initial?: string): void {
   if (isReadonly.value || !model) return
   const { r, c } = focus.value
-  const fromTyping = initial !== undefined
-  draft.value = fromTyping ? initial : cellRaw(r, c)
+  draft.value = initial !== undefined ? initial : cellRaw(r, c)
   editing.value = { r, c }
-  // 直接键入 = 覆盖编辑：光标置末尾（全选会吞掉后续追加的字符）
-  // 双击/F2 = 编辑原值：全选便于整体替换
-  void nextFocus(!fromTyping)
+  // 不默认全选：光标置末尾，避免进入编辑即覆盖原内容（直接键入场景
+  // draft 已被初始字符替换，同样无需全选）
+  void nextFocus()
 }
 
-function nextFocus(selectAll: boolean): void {
+function nextFocus(): void {
   setTimeout(() => {
     const input = document.querySelector<HTMLInputElement>('input.cell-editor')
     if (!input) return
     input.focus()
-    if (selectAll) {
-      input.select()
-    } else {
-      const end = input.value.length
-      input.setSelectionRange(end, end)
-    }
+    const end = input.value.length
+    input.setSelectionRange(end, end)
   }, 0)
 }
 
@@ -546,6 +561,7 @@ function handleKeydown(event: KeyboardEvent): void {
 onMounted(async () => {
   window.addEventListener('keydown', handleKeydown)
   window.addEventListener('mouseup', handleGlobalMouseUp)
+  window.addEventListener('pointerdown', handlePointerDown, true)
 
   try {
     const { data } = await api.get(`/documents/${docId.value}`)
@@ -676,6 +692,7 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', handleKeydown)
   window.removeEventListener('mouseup', handleGlobalMouseUp)
+  window.removeEventListener('pointerdown', handlePointerDown, true)
   stopObserve?.()
   provider?.destroy()
   ydoc?.destroy()
@@ -883,7 +900,8 @@ onBeforeUnmount(() => {
                 }"
                 :style="cellCssStyle(r - 1, c - 1)"
                 :data-remote-name="remoteCursorAt(r - 1, c - 1)?.name"
-                @mousedown.prevent="handleCellMouseDown(r - 1, c - 1, $event)"
+                @mousedown="handleCellMouseDown(r - 1, c - 1, $event)"
+                @dblclick="handleCellDblClick($event)"
                 @mouseenter="handleCellMouseEnter(r - 1, c - 1)"
 
               >
@@ -901,7 +919,7 @@ onBeforeUnmount(() => {
         </table>
       </div>
       <div class="grid-hint">
-        点按编辑（支持中文输入法）· 拖动 / Shift+点按框选 · Enter 确认 · Esc 取消 · 方向键与 Tab 导航
+        点按选中 · 双击编辑（触屏点按编辑，支持中文输入法）· 拖动 / Shift+点按框选 · Enter 确认 · Esc 取消 · 方向键与 Tab 导航
         · 公式示例：=A1+B2、=SUM(A1:A9)
       </div>
     </div>
@@ -931,7 +949,7 @@ onBeforeUnmount(() => {
         <tbody>
           <tr><td><kbd>方向键</kbd> / <kbd>Tab</kbd></td><td>在单元格间导航</td></tr>
           <tr><td><kbd>Shift</kbd> + 方向键</td><td>扩展选区</td></tr>
-          <tr><td><kbd>Enter</kbd> / <kbd>F2</kbd></td><td>编辑当前单元格</td></tr>
+          <tr><td>双击 / <kbd>Enter</kbd> / <kbd>F2</kbd></td><td>编辑当前单元格</td></tr>
           <tr><td><kbd>Enter</kbd> / <kbd>Tab</kbd>（编辑中）</td><td>确认并移至下一格</td></tr>
           <tr><td><kbd>Esc</kbd></td><td>取消编辑 / 关闭弹层</td></tr>
           <tr><td><kbd>⌘/Ctrl + ⏎</kbd></td><td>打开评论抽屉</td></tr>
