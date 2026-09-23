@@ -12,6 +12,8 @@ export default defineConfig({
     AutoImport({ resolvers: [NaiveUiResolver()] }),
   ],
   server: {
+    // 监听所有网卡：本机 localhost + 局域网 IP 均可访问
+    host: true,
     proxy: {
       '/api': {
         target: 'http://127.0.0.1:8000',
