@@ -9,24 +9,25 @@ export const router = createRouter({
   routes: [
     {
       path: '/login',
-      name: 'login',
       component: () => import('../layouts/DefaultLayout.vue'),
       meta: { guest: true, title: `登录 · ${PAGE_TITLE}` },
       children: [
         {
+          // name 须挂在空 path 子路由上：挂父路由会导致按 name 跳转时不渲染子组件（空白页）
           path: '',
+          name: 'login',
           component: () => import('../views/auth/LoginView.vue'),
         },
       ],
     },
     {
       path: '/register',
-      name: 'register',
       component: () => import('../layouts/DefaultLayout.vue'),
       meta: { guest: true, title: `注册 · ${PAGE_TITLE}` },
       children: [
         {
           path: '',
+          name: 'register',
           component: () => import('../views/auth/RegisterView.vue'),
         },
       ],
@@ -84,7 +85,8 @@ router.beforeEach(async (to) => {
   }
 
   if (to.meta.requiresAuth && !auth.user) {
-    return { name: 'login', query: { redirect: to.fullPath } }
+    // 用 path 跳转（按 name 解析嵌套路由曾导致登录页空白）
+    return { path: '/login', query: { redirect: to.fullPath } }
   }
 
   if (to.meta.guest && auth.user) {
