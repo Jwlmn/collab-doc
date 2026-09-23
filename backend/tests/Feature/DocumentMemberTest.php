@@ -204,4 +204,81 @@ class DocumentMemberTest extends TestCase
             ->putJson("/api/documents/{$documentB->id}/members/{$member->id}", ['role' => 'editor'])
             ->assertNotFound();
     }
+
+    public function test_owner_can_search_invitees_by_name_or_email(): void
+    {
+        $owner = User::factory()->create();
+        $byName = User::factory()->create(['name' => '张三丰', 'email' => 'zhangsan@example.com']);
+        $byEmail = User::factory()->create(['name' => '李四', 'email' => 'lisi@corp.example']);
+        User::factory()->create(['name' => '王五', 'email' => 'wang@example.com']);
+        $document = Document::factory()->for($owner)->create();
+
+        // 按用户名搜
+        $this->actingAs($owner)
+            ->getJson("/api/documents/{$document->id}/members/search?".http_build_query(['q' => '张']))
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.id', $byName->id)
+            ->assertJsonPath('data.0.email', 'zhangsan@example.com');
+
+        // 按邮箱关键词搜
+        $this->actingAs($owner)
+            ->getJson("/api/documents/{$document->id}/members/search?".http_build_query(['q' => 'lisi@']))
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.id', $byEmail->id);
+    }
+
+    public function test_invite_search_excludes_owner_and_existing_members(): void
+    {
+        $owner = User::factory()->create(['name' => '老大']);
+        $existing = User::factory()->create(['name' => '老成员']);
+        $stranger = User::factory()->create(['name' => '老王']);
+        $document = Document::factory()->for($owner)->create();
+        DocumentMember::factory()->for($document)->for($existing)->create(['role' => 'viewer']);
+
+        $response = $this->actingAs($owner)
+            ->getJson("/api/documents/{$document->id}/members/search?".http_build_query(['q' => '老']))
+            ->assertOk();
+
+        $this->assertSame([$stranger->id], array_column($response->json('data'), 'id'));
+    }
+
+    public function test_invite_search_empty_query_returns_empty(): void
+    {
+        $owner = User::factory()->create();
+        User::factory()->count(3)->create();
+        $document = Document::factory()->for($owner)->create();
+
+        $this->actingAs($owner)
+            ->getJson("/api/documents/{$document->id}/members/search")
+            ->assertOk()
+            ->assertJsonCount(0, 'data');
+    }
+
+    public function test_invite_search_is_owner_only(): void
+    {
+        $owner = User::factory()->create();
+        $editor = User::factory()->create();
+        $stranger = User::factory()->create();
+        $document = Document::factory()->for($owner)->create();
+        DocumentMember::factory()->for($document)->for($editor)->create(['role' => 'editor']);
+
+        $this->actingAs($editor)
+            ->getJson("/api/documents/{$document->id}/members/search?q=x")
+            ->assertForbidden();
+
+        $this->actingAs($stranger)
+            ->getJson("/api/documents/{$document->id}/members/search?q=x")
+            ->assertForbidden();
+    }
+
+    public function test_guest_cannot_search_invitees(): void
+    {
+        $owner = User::factory()->create();
+        $document = Document::factory()->for($owner)->create();
+
+        $this->getJson("/api/documents/{$document->id}/members/search?q=x")
+            ->assertUnauthorized();
+    }
 }

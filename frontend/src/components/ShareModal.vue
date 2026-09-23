@@ -23,10 +23,95 @@ const removingId = ref<number | null>(null)
 
 const inviteForm = reactive({ email: '', role: 'viewer' as 'viewer' | 'editor' })
 
+/** 联想搜索：用户名/邮箱关键词 → 弹层选择填入（服务端已排除所有者与已有成员） */
+interface InviteSuggestion {
+  id: number
+  name: string
+  email: string
+}
+const suggestions = ref<InviteSuggestion[]>([])
+const suggestOpen = ref(false)
+const suggestActive = ref(0)
+/** 已通过联想选中的邮箱：输入未变时不再弹层 */
+const pickedEmail = ref('')
+let suggestTimer: ReturnType<typeof setTimeout> | null = null
+
+watch(() => inviteForm.email, (value) => {
+  const q = value.trim()
+  if (suggestTimer) clearTimeout(suggestTimer)
+  if (!q || q === pickedEmail.value) {
+    suggestions.value = []
+    suggestOpen.value = false
+    return
+  }
+  suggestTimer = setTimeout(async () => {
+    try {
+      const { data } = await api.get(`/documents/${props.documentId}/members/search`, {
+        params: { q },
+      })
+      // 查询期间继续输入的旧结果丢弃：仅在关键词未变时更新
+      if (inviteForm.email.trim() !== q) return
+      suggestions.value = data.data
+      suggestActive.value = 0
+      suggestOpen.value = data.data.length > 0
+    } catch {
+      suggestions.value = []
+      suggestOpen.value = false
+    }
+  }, 200)
+})
+
+function selectSuggestion(user: InviteSuggestion): void {
+  inviteForm.email = user.email
+  pickedEmail.value = user.email
+  suggestions.value = []
+  suggestOpen.value = false
+}
+
+function closeSuggest(): void {
+  suggestOpen.value = false
+}
+
+/** 输入框键盘：弹层开着时 ↑↓/Enter/Esc 走选择，否则 Enter 提交添加 */
+function handleInviteKeydown(event: KeyboardEvent): void {
+  if (suggestOpen.value && suggestions.value.length > 0) {
+    if (event.key === 'ArrowDown') {
+      event.preventDefault()
+      suggestActive.value = (suggestActive.value + 1) % suggestions.value.length
+      return
+    }
+    if (event.key === 'ArrowUp') {
+      event.preventDefault()
+      suggestActive.value =
+        (suggestActive.value - 1 + suggestions.value.length) % suggestions.value.length
+      return
+    }
+    if (event.key === 'Enter' && !event.metaKey && !event.ctrlKey) {
+      event.preventDefault()
+      const user = suggestions.value[suggestActive.value]
+      if (user) selectSuggestion(user)
+      return
+    }
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      suggestOpen.value = false
+      return
+    }
+  }
+  if (event.key === 'Enter' && !event.metaKey && !event.ctrlKey) {
+    event.preventDefault()
+    void handleAdd()
+  }
+}
+
 watch(
   () => props.show,
   async (visible) => {
-    if (visible) await fetchMembers()
+    if (visible) {
+      suggestOpen.value = false
+      suggestions.value = []
+      await fetchMembers()
+    }
   },
 )
 
@@ -54,6 +139,8 @@ async function handleAdd(): Promise<void> {
     })
     members.value.push(data.data)
     inviteForm.email = ''
+    pickedEmail.value = ''
+    suggestOpen.value = false
     message.success(`已添加 ${data.data.user.name}`)
   } catch (error) {
     message.error(getApiErrorMessage(error))
@@ -128,12 +215,35 @@ async function copyInviteLink(): Promise<void> {
     @update:show="emit('update:show', $event)"
   >
     <div class="invite-row">
-      <n-input
-        v-model:value="inviteForm.email"
-        placeholder="输入邮箱添加成员"
-        aria-label="邀请邮箱"
-        @keyup.enter="handleAdd"
-      />
+      <div class="invite-input-wrap">
+        <n-input
+          v-model:value="inviteForm.email"
+          placeholder="搜索用户名或邮箱…"
+          aria-label="邀请用户名或邮箱"
+          @keydown="handleInviteKeydown"
+          @blur="closeSuggest"
+        />
+        <div
+          v-if="suggestOpen && suggestions.length > 0"
+          class="suggest-popup"
+          role="listbox"
+          aria-label="成员搜索结果"
+        >
+          <div
+            v-for="(user, index) in suggestions"
+            :key="user.id"
+            class="suggest-item"
+            :class="{ active: index === suggestActive }"
+            role="option"
+            :aria-selected="index === suggestActive"
+            @mousedown.prevent="selectSuggestion(user)"
+            @mouseenter="suggestActive = index"
+          >
+            <span class="suggest-name">{{ user.name }}</span>
+            <span class="suggest-email">{{ user.email }}</span>
+          </div>
+        </div>
+      </div>
       <n-select
         v-model:value="inviteForm.role"
         aria-label="权限角色"
@@ -221,6 +331,46 @@ async function copyInviteLink(): Promise<void> {
   display: flex;
   gap: 8px;
   margin-bottom: 16px;
+}
+.invite-input-wrap {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+.suggest-popup {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.16);
+  max-height: 220px;
+  overflow-y: auto;
+  z-index: 20;
+}
+.suggest-item {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 14px;
+}
+.suggest-item.active {
+  background: var(--bg-muted);
+}
+.suggest-name {
+  font-weight: 500;
+  white-space: nowrap;
+}
+.suggest-email {
+  font-size: 12px;
+  color: #999;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .member-list {
   max-height: 320px;

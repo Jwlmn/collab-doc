@@ -48,6 +48,8 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('documents/{document}/comments/unread', [CommentController::class, 'unread']);
         Route::post('documents/{document}/comments/read', [CommentController::class, 'markRead']);
 
+        // 须在 {member} 绑定路由之前注册，避免被 members/{member} 吞掉
+        Route::get('documents/{document}/members/search', [DocumentMemberController::class, 'searchInvitees']);
         Route::apiResource('documents.members', DocumentMemberController::class)
             ->only(['index', 'store', 'update', 'destroy']);
     });

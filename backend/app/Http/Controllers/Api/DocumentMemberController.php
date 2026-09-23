@@ -29,6 +29,38 @@ class DocumentMemberController extends Controller
     }
 
     /**
+     * 共享联想搜索：按用户名/邮箱关键词返回可邀请用户（仅所有者）。
+     *
+     * 与 @提及 的 /users/search 分离——该接口按需暴露 email，
+     * 且排除文档所有者与已有成员，空关键词返回空列表。
+     */
+    public function searchInvitees(Request $request, Document $document): JsonResponse
+    {
+        $this->authorize('manage', $document);
+
+        $query = mb_strtolower(trim((string) $request->query('q', '')));
+
+        if ($query === '') {
+            return response()->json(['data' => []]);
+        }
+
+        $excludedIds = $document->members()->pluck('user_id')->push($document->user_id);
+
+        $users = User::query()
+            ->whereNotIn('id', $excludedIds)
+            ->where(function ($builder) use ($query) {
+                $builder
+                    ->whereRaw('LOWER(name) LIKE ?', ['%'.$query.'%'])
+                    ->orWhereRaw('LOWER(email) LIKE ?', ['%'.$query.'%']);
+            })
+            ->orderBy('name')
+            ->limit(10)
+            ->get(['id', 'name', 'email']);
+
+        return response()->json(['data' => $users]);
+    }
+
+    /**
      * 添加成员（仅所有者）。
      */
     public function store(Request $request, Document $document): JsonResponse
