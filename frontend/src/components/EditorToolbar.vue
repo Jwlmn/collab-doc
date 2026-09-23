@@ -1,11 +1,14 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import type { Editor } from '@tiptap/vue-3'
+import { useDialog } from 'naive-ui'
 
 const props = defineProps<{
   editor: Editor | null
   readonly?: boolean
 }>()
+
+const dialog = useDialog()
 
 /** 事务版本号：驱动 isActive 状态在选区/内容变化时刷新 */
 const tick = ref(0)
@@ -89,6 +92,17 @@ function handleTableMenu(key: string) {
   const action = key as TableAction
   if (action === 'insert') {
     run((c) => c.insertTable({ rows: 3, cols: 3, withHeaderRow: true }))
+    return
+  }
+  if (action === 'deleteTable') {
+    dialog.warning({
+      title: '删除表格',
+      content: '确定删除当前表格吗？删除后可用 ⌘Z 撤销。',
+      positiveText: '删除',
+      negativeText: '取消',
+      positiveButtonProps: { type: 'error' },
+      onPositiveClick: () => run((c) => c.deleteTable()),
+    })
     return
   }
   run((c) => c[action]())
@@ -176,18 +190,21 @@ function handleTableMenu(key: string) {
 
     <n-divider vertical />
 
-    <n-button
-      v-for="level in [1, 2, 3]"
-      :key="level"
-      size="small"
-      quaternary
-      :aria-label="`标题 ${level}`"
-      :type="isActive('heading', { level }) ? 'primary' : 'default'"
-      :disabled="readonly"
-      @click="run((c) => c.toggleHeading({ level: level as 1 | 2 | 3 }))"
-    >
-      H{{ level }}
-    </n-button>
+    <n-tooltip v-for="level in [1, 2, 3]" :key="level" trigger="hover">
+      <template #trigger>
+        <n-button
+          size="small"
+          quaternary
+          :aria-label="`标题 ${level}`"
+          :type="isActive('heading', { level }) ? 'primary' : 'default'"
+          :disabled="readonly"
+          @click="run((c) => c.toggleHeading({ level: level as 1 | 2 | 3 }))"
+        >
+          H{{ level }}
+        </n-button>
+      </template>
+      标题 {{ level }}
+    </n-tooltip>
 
     <n-divider vertical />
 
@@ -271,15 +288,20 @@ function handleTableMenu(key: string) {
 
     <n-divider vertical />
 
-    <n-dropdown
-      :options="tableMenuOptions"
-      :disabled="readonly"
-      @select="handleTableMenu"
-    >
-      <n-button size="small" quaternary :disabled="readonly" aria-label="表格">
-        表格
-      </n-button>
-    </n-dropdown>
+    <n-tooltip trigger="hover">
+      <template #trigger>
+        <n-dropdown
+          :options="tableMenuOptions"
+          :disabled="readonly"
+          @select="handleTableMenu"
+        >
+          <n-button size="small" quaternary :disabled="readonly" aria-label="表格">
+            表格
+          </n-button>
+        </n-dropdown>
+      </template>
+      表格
+    </n-tooltip>
   </div>
 </template>
 

@@ -3,6 +3,7 @@ import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useDialog, useMessage } from 'naive-ui'
 import { api, getApiErrorMessage } from '../utils/request'
+import { formatTime } from '../utils/format'
 import type { DocumentMeta } from '../types'
 
 type TrashDoc = DocumentMeta & { deleted_at?: string | null }
@@ -62,11 +63,6 @@ function handleForceDelete(doc: TrashDoc): void {
   })
 }
 
-function formatTime(value?: string | null): string {
-  if (!value) return ''
-  return new Date(value).toLocaleString('zh-CN', { hour12: false })
-}
-
 onMounted(() => {
   void fetchTrash()
 })
@@ -82,7 +78,9 @@ onMounted(() => {
       <n-text depth="3" style="font-size: 13px">删除的文档会保留在这里，可随时恢复</n-text>
     </div>
 
-    <n-skeleton v-if="loading" :sharp="false" height="64px" style="margin-top: 8px" />
+    <template v-if="loading">
+      <n-skeleton v-for="i in 3" :key="i" height="64px" :sharp="false" style="margin-bottom: 12px" />
+    </template>
 
     <n-empty
       v-else-if="list.length === 0"
@@ -136,7 +134,7 @@ onMounted(() => {
               彻底删除
             </n-button>
           </n-space>
-        </template #suffix>
+        </template>
       </n-list-item>
     </n-list>
   </div>

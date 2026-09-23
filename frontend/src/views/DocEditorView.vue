@@ -13,6 +13,7 @@ import * as Y from 'yjs'
 import { useAuthStore } from '../stores/auth'
 import { api, getApiErrorMessage } from '../utils/request'
 import { getCollabUrl } from '../utils/collab'
+import { userColor as colorOf } from '../utils/color'
 import VersionDrawer from '../components/VersionDrawer.vue'
 import CommentDrawer from '../components/CommentDrawer.vue'
 import EditorToolbar from '../components/EditorToolbar.vue'
@@ -57,6 +58,8 @@ const bubbleTick = ref(0)
 const versionDrawerVisible = ref(false)
 const commentDrawerVisible = ref(false)
 const helpVisible = ref(false)
+const linkVisible = ref(false)
+const linkUrl = ref('https://')
 const shareVisible = ref(false)
 const unreadComments = ref(0)
 const exporting = ref(false)
@@ -84,7 +87,7 @@ async function handleExport(key: string) {
       message.success('已导出 Word 文档')
     }
   } catch (error) {
-    message.error(error instanceof Error ? error.message : '导出失败')
+    message.error(getApiErrorMessage(error))
   } finally {
     exporting.value = false
   }
@@ -116,14 +119,8 @@ const statusType = computed(() =>
   connectionStatus.value === 'connecting' ? ('warning' as const) : ('error' as const),
 )
 
-/** 稳定的用户颜色（按名字哈希） */
-const userColor = computed(() => {
-  const name = auth.user?.name ?? '匿名'
-  const palette = ['#e57373', '#f06292', '#7986cb', '#4db6ac', '#81c784', '#ffb74d', '#9575cd']
-  let hash = 0
-  for (const ch of name) hash = (hash + ch.charCodeAt(0)) % palette.length
-  return palette[hash]
-})
+/** 稳定的用户颜色（按名字哈希，公共实现见 utils/color） */
+const userColor = computed(() => colorOf(auth.user?.name))
 
 function refreshCollaborators(): void {
   const awareness = provider?.awareness
@@ -149,10 +146,16 @@ function toggleLink(): void {
     editor.value.chain().focus().unsetLink().run()
     return
   }
-  const url = window.prompt('输入链接地址', 'https://')
-  if (url) {
-    editor.value.chain().focus().setLink({ href: url }).run()
-  }
+  linkUrl.value = 'https://'
+  linkVisible.value = true
+}
+
+/** 确认插入链接（n-modal，替代原生 prompt） */
+function confirmLink(): void {
+  const url = linkUrl.value.trim()
+  if (!url || !editor.value) return
+  editor.value.chain().focus().setLink({ href: url }).run()
+  linkVisible.value = false
 }
 
 /** P0-2：新建来源进入时聚焦标题（随后清掉 query，避免刷新重复触发） */
@@ -400,14 +403,21 @@ async function handleRename() {
 
         <n-popover trigger="click" placement="bottom-end">
           <template #trigger>
-            <div class="avatar-stack" role="button" aria-label="在线协作者">
+            <div
+              class="avatar-stack"
+              role="button"
+              tabindex="0"
+              aria-label="在线协作者"
+              @keydown.enter.prevent="($event.currentTarget as HTMLElement).click()"
+              @keydown.space.prevent="($event.currentTarget as HTMLElement).click()"
+            >
               <n-avatar
                 v-for="person in collaborators.slice(0, 4)"
                 :key="person.name"
                 round
                 :size="26"
                 :color="person.color"
-                style="margin-left: -8px; border: 2px solid #fff"
+                style="margin-left: -6px; border: 1.5px solid #fff"
               >
                 {{ person.name.slice(0, 1) }}
               </n-avatar>
@@ -416,7 +426,7 @@ async function handleRename() {
                 round
                 :size="26"
                 color="#909399"
-                style="margin-left: -8px; border: 2px solid #fff"
+                style="margin-left: -6px; border: 1.5px solid #fff"
               >
                 +{{ collaborators.length - 4 }}
               </n-avatar>
@@ -431,18 +441,20 @@ async function handleRename() {
           </n-space>
         </n-popover>
 
-        <n-tag v-if="connectionStatus !== 'connected'" :type="statusType" size="small" round>
-          {{ statusText }}
-        </n-tag>
-        <n-tag v-else-if="!synced || hasUnsynced" type="info" size="small" round>
-          同步中…
-        </n-tag>
-        <n-tag v-else type="success" size="small" round>✓ 已同步</n-tag>
+        <span role="status" aria-live="polite" class="sync-status">
+          <n-tag v-if="connectionStatus !== 'connected'" :type="statusType" size="small" round>
+            {{ statusText }}
+          </n-tag>
+          <n-tag v-else-if="!synced || hasUnsynced" type="info" size="small" round>
+            同步中…
+          </n-tag>
+          <n-tag v-else type="success" size="small" round>✓ 已同步</n-tag>
+        </span>
       </n-space>
     </div>
 
-    <!-- P1-5：纸面骨架 -->
-    <div v-if="loading" class="editor-loading">
+    <!-- P1-5：纸面骨架（editor 未就绪前不撤，消除空纸面窗口） -->
+    <div v-if="loading || !editor" class="editor-loading">
       <div class="editor-surface skeleton-surface">
         <n-skeleton height="28px" width="45%" style="margin-bottom: 28px" />
         <n-skeleton text :lines="5" />
@@ -453,46 +465,66 @@ async function handleRename() {
       <EditorToolbar :editor="editor" :readonly="isReadonly" />
 
       <div v-show="editor" ref="bubbleEl" class="bubble-menu" role="toolbar" aria-label="选中格式工具栏">
-        <n-button
-          size="tiny"
-          quaternary
-          aria-label="加粗"
-          :type="isActive('bold') ? 'primary' : 'default'"
-          :disabled="isReadonly"
-          @click="editor?.chain().focus().toggleBold().run()"
-        >
-          <strong>B</strong>
-        </n-button>
-        <n-button
-          size="tiny"
-          quaternary
-          aria-label="斜体"
-          :type="isActive('italic') ? 'primary' : 'default'"
-          :disabled="isReadonly"
-          @click="editor?.chain().focus().toggleItalic().run()"
-        >
-          <em>I</em>
-        </n-button>
-        <n-button
-          size="tiny"
-          quaternary
-          aria-label="删除线"
-          :type="isActive('strike') ? 'primary' : 'default'"
-          :disabled="isReadonly"
-          @click="editor?.chain().focus().toggleStrike().run()"
-        >
-          <s>S</s>
-        </n-button>
-        <n-button
-          size="tiny"
-          quaternary
-          aria-label="插入链接"
-          :type="isActive('link') ? 'primary' : 'default'"
-          :disabled="isReadonly"
-          @click="toggleLink"
-        >
-          🔗
-        </n-button>
+        <n-tooltip trigger="hover">
+          <template #trigger>
+            <n-button
+              size="tiny"
+              quaternary
+              aria-label="加粗"
+              :type="isActive('bold') ? 'primary' : 'default'"
+              :disabled="isReadonly"
+              @click="editor?.chain().focus().toggleBold().run()"
+            >
+              <strong>B</strong>
+            </n-button>
+          </template>
+          加粗
+        </n-tooltip>
+        <n-tooltip trigger="hover">
+          <template #trigger>
+            <n-button
+              size="tiny"
+              quaternary
+              aria-label="斜体"
+              :type="isActive('italic') ? 'primary' : 'default'"
+              :disabled="isReadonly"
+              @click="editor?.chain().focus().toggleItalic().run()"
+            >
+              <em>I</em>
+            </n-button>
+          </template>
+          斜体
+        </n-tooltip>
+        <n-tooltip trigger="hover">
+          <template #trigger>
+            <n-button
+              size="tiny"
+              quaternary
+              aria-label="删除线"
+              :type="isActive('strike') ? 'primary' : 'default'"
+              :disabled="isReadonly"
+              @click="editor?.chain().focus().toggleStrike().run()"
+            >
+              <s>S</s>
+            </n-button>
+          </template>
+          删除线
+        </n-tooltip>
+        <n-tooltip trigger="hover">
+          <template #trigger>
+            <n-button
+              size="tiny"
+              quaternary
+              aria-label="插入链接"
+              :type="isActive('link') ? 'primary' : 'default'"
+              :disabled="isReadonly"
+              @click="toggleLink"
+            >
+              🔗
+            </n-button>
+          </template>
+          插入链接
+        </n-tooltip>
       </div>
 
       <EditorContent v-if="editor" :editor="editor" />
@@ -514,6 +546,22 @@ async function handleRename() {
 
     <ShareModal v-model:show="shareVisible" :document-id="docId" />
 
+    <n-modal
+      v-model:show="linkVisible"
+      preset="dialog"
+      title="插入链接"
+      positive-button-text="确定"
+      negative-button-text="取消"
+      @positive-click="confirmLink"
+    >
+      <n-input
+        v-model:value="linkUrl"
+        placeholder="https://"
+        aria-label="链接地址"
+        @keyup.enter="confirmLink"
+      />
+    </n-modal>
+
     <n-modal v-model:show="helpVisible" preset="card" title="快捷键" style="width: 440px">
       <n-table :bordered="false" :single-line="false" size="small">
         <thead>
@@ -525,6 +573,8 @@ async function handleRename() {
           <tr><td><kbd>⌘/Ctrl + Z</kbd></td><td>撤销</td></tr>
           <tr><td><kbd>⇧⌘/Ctrl + Z</kbd></td><td>重做</td></tr>
           <tr><td><kbd>⌘/Ctrl + ⏎</kbd></td><td>打开评论抽屉</td></tr>
+          <tr><td><kbd>⇧⌘/Ctrl + S</kbd></td><td>删除线</td></tr>
+          <tr><td><kbd>/</kbd></td><td>斜杠命令菜单（标题/列表/引用…）</td></tr>
           <tr><td><kbd>/</kbd> 或 <kbd>⌘/Ctrl + K</kbd></td><td>聚焦搜索（文档列表页）</td></tr>
           <tr><td><kbd>Esc</kbd></td><td>关闭弹层</td></tr>
           <tr><td><kbd>?</kbd></td><td>打开/关闭本说明</td></tr>
@@ -560,6 +610,11 @@ async function handleRename() {
 }
 .title-input:not(:hover):not(.n-input--focus) :deep(.n-input__state-border) {
   border-color: transparent;
+}
+.sync-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 .avatar-stack {
   display: flex;
@@ -620,6 +675,10 @@ async function handleRename() {
   font-size: 16px;
   line-height: 1.75;
   min-height: 60vh;
+}
+:deep(.doc-editor-content):focus-visible {
+  outline: 2px solid #2080f0;
+  outline-offset: 2px;
 }
 :deep(.doc-editor-content > h1) {
   font-size: 2em;

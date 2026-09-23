@@ -34,7 +34,7 @@ async function handleAccept(): Promise<void> {
   <div class="invite-page">
     <n-card title="协作文档邀请" class="invite-card">
       <n-space vertical size="large" align="center" style="text-align: center">
-        <n-text style="font-size: 15px">
+        <n-text style="font-size: 14px">
           有人邀请你加入一篇协作文档<br />
           <n-text depth="3">接受后默认获得只读权限（可阅读、评论）</n-text>
         </n-text>

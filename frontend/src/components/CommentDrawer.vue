@@ -5,6 +5,7 @@ import { api, getApiErrorMessage } from '../utils/request'
 import { useIsMobile } from '../composables/useIsMobile'
 import { useAuthStore } from '../stores/auth'
 import { parseContent } from '../utils/mention'
+import { formatTime } from '../utils/format'
 import type { Comment, MentionUser } from '../types'
 
 const props = defineProps<{
@@ -121,6 +122,36 @@ function scheduleMentionSearch(query: string): void {
 function closeMentionPopup(): void {
   mentionQuery.value = null
   mentionUsers.value = []
+  mentionActiveIndex.value = 0
+}
+
+/** 弹层键盘导航：↑↓ 移动、Enter 选择、Esc 关闭（配合 role=listbox/option） */
+const mentionActiveIndex = ref(0)
+
+watch(mentionUsers, () => {
+  mentionActiveIndex.value = 0
+})
+
+function handleMentionKeydown(event: KeyboardEvent): void {
+  if (!mentionPopupVisible.value || mentionUsers.value.length === 0) return
+
+  if (event.key === 'ArrowDown') {
+    event.preventDefault()
+    mentionActiveIndex.value = (mentionActiveIndex.value + 1) % mentionUsers.value.length
+  } else if (event.key === 'ArrowUp') {
+    event.preventDefault()
+    mentionActiveIndex.value =
+      (mentionActiveIndex.value - 1 + mentionUsers.value.length) % mentionUsers.value.length
+  } else if (event.key === 'Enter' && !event.metaKey && !event.ctrlKey && !event.shiftKey) {
+    const user = mentionUsers.value[mentionActiveIndex.value]
+    if (user) {
+      event.preventDefault()
+      selectMention(user)
+    }
+  } else if (event.key === 'Escape') {
+    event.preventDefault()
+    closeMentionPopup()
+  }
 }
 
 /** 失焦延迟关闭，给点击候选项留出时间 */
@@ -182,10 +213,6 @@ async function handleDelete(comment: Comment): Promise<void> {
   }
 }
 
-function formatTime(value?: string): string {
-  if (!value) return ''
-  return new Date(value).toLocaleString('zh-CN', { hour12: false })
-}
 </script>
 
 <template>
@@ -233,14 +260,24 @@ function formatTime(value?: string): string {
         </n-spin>
 
         <div class="comment-input-wrap">
-          <div v-if="mentionPopupVisible" class="mention-popup">
+          <div
+            v-if="mentionPopupVisible"
+            id="mention-popup"
+            class="mention-popup"
+            role="listbox"
+            aria-label="提及用户候选"
+          >
             <div v-if="mentionSearching" class="mention-empty">搜索中…</div>
             <div v-else-if="mentionUsers.length === 0" class="mention-empty">无匹配用户</div>
             <div
-              v-for="user in mentionUsers"
+              v-for="(user, index) in mentionUsers"
               :key="user.id"
               class="mention-item"
+              :class="{ active: index === mentionActiveIndex }"
+              role="option"
+              :aria-selected="index === mentionActiveIndex"
               @mousedown.prevent="selectMention(user)"
+              @mouseenter="mentionActiveIndex = index"
             >
               <n-avatar round :size="22" color="#7986cb">{{ user.name.slice(0, 1) }}</n-avatar>
               <span>{{ user.name }}</span>
@@ -253,10 +290,12 @@ function formatTime(value?: string): string {
             type="textarea"
             :rows="3"
             placeholder="输入评论，@ 可提及用户"
+            aria-label="评论内容"
             maxlength="2000"
             show-count
             @input="handleInput"
             @blur="handleBlur"
+            @keydown="handleMentionKeydown"
             @keyup.enter.ctrl="handleSubmit"
             @keyup.enter.meta="handleSubmit"
           />
@@ -354,7 +393,8 @@ function formatTime(value?: string): string {
   cursor: pointer;
   font-size: 14px;
 }
-.mention-item:hover {
+.mention-item:hover,
+.mention-item.active {
   background: var(--bg-muted);
 }
 .mention-empty {

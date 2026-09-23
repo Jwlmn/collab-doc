@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, h, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { useDialog, useMessage, type DropdownOption } from 'naive-ui'
+import { NButton, useDialog, useMessage, useNotification, type DropdownOption } from 'naive-ui'
 import { useDocumentsStore } from '../stores/documents'
-import { getApiErrorMessage } from '../utils/request'
+import { api, getApiErrorMessage } from '../utils/request'
 import ShareModal from '../components/ShareModal.vue'
 import { highlight } from '../utils/highlight'
+import { formatRelativeTime } from '../utils/format'
+import { userColor as colorOf } from '../utils/color'
 import { useIsMobile } from '../composables/useIsMobile'
 import { useImportFlowStore } from '../stores/importFlow'
 import { importFileToPayload, docTitleFromFilename } from '../io/importFile'
@@ -19,6 +21,7 @@ function openDoc(doc: Pick<DocumentMeta, 'id' | 'type'>) {
 const documents = useDocumentsStore()
 const importFlow = useImportFlowStore()
 const message = useMessage()
+const notification = useNotification()
 const dialog = useDialog()
 const router = useRouter()
 const isMobile = useIsMobile()
@@ -210,7 +213,31 @@ async function handleRename() {
 async function handleDelete(doc: DocumentMeta) {
   try {
     await documents.remove(doc.id)
-    message.success(`已将「${doc.title}」移入回收站`)
+    // 可撤销提示：直接调恢复接口（零后端改动）
+    const notif = notification.success({
+      content: `已将「${doc.title}」移入回收站`,
+      duration: 8000,
+      action: () =>
+        h(
+          NButton,
+          {
+            size: 'tiny',
+            type: 'primary',
+            ghost: true,
+            onClick: async () => {
+              notif.destroy()
+              try {
+                await api.post(`/documents/${doc.id}/restore`)
+                await documents.fetch()
+                message.success(`已恢复「${doc.title}」`)
+              } catch (error) {
+                message.error(getApiErrorMessage(error))
+              }
+            },
+          },
+          { default: () => '撤销' },
+        ),
+    })
   } catch (error) {
     message.error(getApiErrorMessage(error))
   }
@@ -243,12 +270,9 @@ function handleOwnerMenu(key: string, doc: DocumentMeta) {
 /** 列表成员头像：所有者 + 成员按 id 去重 */
 function memberAvatars(doc: DocumentMeta) {
   const people: Array<{ id: number | null; name: string; color: string }> = []
-  const palette = ['#e57373', '#7986cb', '#4db6ac', '#81c784', '#ffb74d', '#9575cd', '#f06292']
   const push = (id: number | null, name: string | null) => {
     if (!name || people.some((p) => p.id === id)) return
-    let hash = 0
-    for (const ch of name) hash = (hash + ch.charCodeAt(0)) % palette.length
-    people.push({ id, name, color: palette[hash] })
+    people.push({ id, name, color: colorOf(name) })
   }
   push(doc.owner?.id ?? null, doc.owner?.name ?? null)
   for (const member of doc.members ?? []) push(member.id, member.name)
@@ -256,8 +280,7 @@ function memberAvatars(doc: DocumentMeta) {
 }
 
 function formatTime(value?: string): string {
-  if (!value) return ''
-  return new Date(value).toLocaleString('zh-CN', { hour12: false })
+  return formatRelativeTime(value)
 }
 </script>
 
@@ -292,7 +315,7 @@ function formatTime(value?: string): string {
           v-model:value="searchInput"
           name="document-search"
           clearable
-          placeholder="搜索标题或正文…（/ 聚焦）"
+          placeholder="搜索标题或正文…（/ 或 ⌘K 聚焦）"
           aria-label="搜索文档"
           class="search-box"
         />
@@ -335,7 +358,14 @@ function formatTime(value?: string): string {
       <!-- 网格视图 -->
       <div v-else-if="viewMode === 'grid'" class="doc-grid">
         <n-card v-for="doc in sortedList" :key="doc.id" size="small" class="doc-grid-card">
-          <div class="grid-card-body" @click="openDoc(doc)">
+          <div
+            class="grid-card-body"
+            role="link"
+            tabindex="0"
+            :aria-label="`打开文档 ${doc.title}`"
+            @click="openDoc(doc)"
+            @keydown.enter="openDoc(doc)"
+          >
             <div class="grid-card-title">
               <n-tag
                 size="tiny"
@@ -352,6 +382,7 @@ function formatTime(value?: string): string {
               <span
                 v-if="(doc.members?.length ?? 0) > 0"
                 class="member-stack"
+                :aria-label="`共享给 ${doc.members?.length} 人`"
               >
                 <n-avatar
                   v-for="person in memberAvatars(doc).slice(0, 3)"
@@ -519,7 +550,7 @@ function formatTime(value?: string): string {
       :loading="renaming"
       @positive-click="handleRename"
     >
-      <n-input v-model:value="renameTarget.title" placeholder="文档标题" @keyup.enter="handleRename" />
+      <n-input v-model:value="renameTarget.title" placeholder="文档标题" aria-label="文档标题" @keyup.enter="handleRename" />
     </n-modal>
 
     <ShareModal v-model:show="shareVisible" :document-id="shareDocumentId" />
@@ -577,7 +608,7 @@ function formatTime(value?: string): string {
 }
 .grid-card-title {
   font-weight: 600;
-  font-size: 15px;
+  font-size: 16px;
   overflow: hidden;
   text-overflow: ellipsis;
   display: -webkit-box;
@@ -600,7 +631,7 @@ function formatTime(value?: string): string {
     width: 100%;
   }
   .list-header h2 {
-    font-size: 17px;
+    font-size: 16px;
   }
 }
 </style>

@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { useMessage } from 'naive-ui'
+import { useDialog, useMessage } from 'naive-ui'
 import { api, getApiErrorMessage } from '../utils/request'
+import { formatTime } from '../utils/format'
 import { useIsMobile } from '../composables/useIsMobile'
 import type { SheetCell } from '../io/sheet-model'
 import type { DocumentVersion } from '../types'
@@ -26,6 +27,7 @@ const emit = defineEmits<{
 }>()
 
 const message = useMessage()
+const dialog = useDialog()
 const isMobile = useIsMobile()
 
 const versions = ref<DocumentVersion[]>([])
@@ -116,7 +118,7 @@ async function openPreview(version: DocumentVersion): Promise<void> {
   }
 }
 
-async function handleRestore(version: DocumentVersion): Promise<void> {
+async function restoreVersion(version: DocumentVersion): Promise<void> {
   restoringId.value = version.id
   try {
     const { data } = await api.get(`/documents/${props.documentId}/versions/${version.id}`)
@@ -136,6 +138,18 @@ async function handleRestore(version: DocumentVersion): Promise<void> {
   }
 }
 
+/** 恢复会覆盖当前表格内容，须确认 */
+function handleRestore(version: DocumentVersion): void {
+  dialog.warning({
+    title: '恢复版本',
+    content: '恢复后当前表格内容将被该快照覆盖，确定恢复吗？',
+    positiveText: '恢复',
+    negativeText: '取消',
+    positiveButtonProps: { type: 'warning' },
+    onPositiveClick: () => restoreVersion(version),
+  })
+}
+
 async function handleDelete(version: DocumentVersion): Promise<void> {
   deletingId.value = version.id
   try {
@@ -149,10 +163,6 @@ async function handleDelete(version: DocumentVersion): Promise<void> {
   }
 }
 
-function formatTime(value?: string): string {
-  if (!value) return ''
-  return new Date(value).toLocaleString('zh-CN', { hour12: false })
-}
 </script>
 
 <template>

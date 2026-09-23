@@ -93,6 +93,8 @@ async function handleRemove(member: DocumentMember): Promise<void> {
 }
 
 const copyingInvite = ref(false)
+const linkFallback = ref('')
+const linkFallbackVisible = ref(false)
 
 /** P2-4：生成邀请链接并复制到剪贴板 */
 async function copyInviteLink(): Promise<void> {
@@ -104,7 +106,10 @@ async function copyInviteLink(): Promise<void> {
       await navigator.clipboard.writeText(url)
       message.success('邀请链接已复制（受邀者默认只读）')
     } catch {
-      window.prompt('自动复制失败，请手动复制邀请链接', url)
+      message.warning('自动复制失败，请长按/手动选择下方链接复制')
+      // 复制失败时把链接交给用户手动选择
+      linkFallback.value = url
+      linkFallbackVisible.value = true
     }
   } catch (error) {
     message.error(getApiErrorMessage(error))
@@ -126,10 +131,12 @@ async function copyInviteLink(): Promise<void> {
       <n-input
         v-model:value="inviteForm.email"
         placeholder="输入邮箱添加成员"
+        aria-label="邀请邮箱"
         @keyup.enter="handleAdd"
       />
       <n-select
         v-model:value="inviteForm.role"
+        aria-label="权限角色"
         :options="[
           { label: '只读', value: 'viewer' },
           { label: '可编辑', value: 'editor' },
@@ -154,7 +161,7 @@ async function copyInviteLink(): Promise<void> {
       <n-empty
         v-if="!loading && members.length === 0"
         description="还没有共享成员"
-        style="margin: 32px 0"
+        style="margin: 48px 0"
       />
       <n-list v-else class="member-list">
         <n-list-item v-for="member in members" :key="member.id">
@@ -191,6 +198,21 @@ async function copyInviteLink(): Promise<void> {
         只读成员可阅读、评论；可编辑成员还可修改内容与保存版本；仅所有者可重命名、删除与管理共享。
       </n-text>
     </template>
+  </n-modal>
+
+  <!-- 复制失败兜底：可手动选择链接（替代原生 prompt） -->
+  <n-modal
+    v-model:show="linkFallbackVisible"
+    preset="dialog"
+    title="手动复制邀请链接"
+    negative-button-text="关闭"
+  >
+    <n-input
+      :value="linkFallback"
+      readonly
+      aria-label="邀请链接"
+      @focus="($event.target as HTMLInputElement).select()"
+    />
   </n-modal>
 </template>
 

@@ -7,6 +7,7 @@ import * as Y from 'yjs'
 import { useAuthStore } from '../stores/auth'
 import { api, getApiErrorMessage } from '../utils/request'
 import { getCollabUrl } from '../utils/collab'
+import { userColor as colorOf } from '../utils/color'
 import { useImportFlowStore } from '../stores/importFlow'
 import { exportGridToXlsx, columnLabel } from '../io/cells'
 import { SheetModel, columnLabels, DEFAULT_COLS, type CellStyle } from '../io/sheet-model'
@@ -47,6 +48,7 @@ const collaborators = ref<Collaborator[]>([])
 const commentDrawerVisible = ref(false)
 const versionDrawerVisible = ref(false)
 const shareVisible = ref(false)
+const helpVisible = ref(false)
 const unreadComments = ref(0)
 const exporting = ref(false)
 /** 数据 seed/迁移完成前保持骨架，避免空表格可交互的竞态窗口 */
@@ -463,13 +465,7 @@ function broadcastCell(): void {
   provider?.awareness?.setLocalStateField('cell', { r: focus.value.r, c: focus.value.c })
 }
 
-const userColor = computed(() => {
-  const name = auth.user?.name ?? '匿名'
-  const palette = ['#e57373', '#f06292', '#7986cb', '#4db6ac', '#81c784', '#ffb74d', '#9575cd']
-  let hash = 0
-  for (const ch of name) hash = (hash + ch.charCodeAt(0)) % palette.length
-  return palette[hash]
-})
+const userColor = computed(() => colorOf(auth.user?.name))
 
 /* ---------------- 顶栏动作 ---------------- */
 
@@ -517,18 +513,31 @@ async function handleExport(): Promise<void> {
     await exportGridToXlsx(model.toGrid(), title)
     message.success('已导出 Excel 表格')
   } catch (error) {
-    message.error(error instanceof Error ? error.message : '导出失败')
+    message.error(getApiErrorMessage(error))
   } finally {
     exporting.value = false
   }
 }
 
 function handleKeydown(event: KeyboardEvent): void {
+  const target = event.target as HTMLElement | null
+  const typing =
+    !!target &&
+    (target.tagName === 'INPUT' ||
+      target.tagName === 'TEXTAREA' ||
+      target.isContentEditable)
+
   if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
     if (!commentDrawerVisible.value) {
       event.preventDefault()
       commentDrawerVisible.value = true
     }
+    return
+  }
+
+  if (!typing && event.key === '?') {
+    event.preventDefault()
+    helpVisible.value = !helpVisible.value
   }
 }
 
@@ -696,7 +705,7 @@ onBeforeUnmount(() => {
         <n-tag v-if="isReadonly" size="small" type="warning" round>🔒 只读</n-tag>
       </n-space>
       <n-space align="center" size="small">
-        <n-button quaternary size="small" aria-label="快捷键说明" disabled title="表格快捷键：方向键/Tab 导航，Shift 扩展选区，Enter/F2 编辑">?</n-button>
+        <n-button quaternary size="small" aria-label="快捷键说明" @click="helpVisible = true">?</n-button>
         <n-button v-if="canRename" quaternary size="small" @click="shareVisible = true">共享</n-button>
         <n-button
           quaternary
@@ -705,7 +714,7 @@ onBeforeUnmount(() => {
           aria-label="导出"
           @click="handleExport"
         >
-          导出 ▾
+          导出
         </n-button>
         <n-button quaternary size="small" @click="versionDrawerVisible = true">版本</n-button>
         <n-badge :value="unreadComments" :max="99" :show="unreadComments > 0">
@@ -714,14 +723,21 @@ onBeforeUnmount(() => {
 
         <n-popover trigger="click" placement="bottom-end">
           <template #trigger>
-            <div class="avatar-stack" role="button" aria-label="在线协作者">
+            <div
+              class="avatar-stack"
+              role="button"
+              tabindex="0"
+              aria-label="在线协作者"
+              @keydown.enter.prevent="($event.currentTarget as HTMLElement).click()"
+              @keydown.space.prevent="($event.currentTarget as HTMLElement).click()"
+            >
               <n-avatar
                 v-for="person in collaborators.slice(0, 4)"
                 :key="person.name"
                 round
                 :size="26"
                 :color="person.color"
-                style="margin-left: -8px; border: 2px solid #fff"
+                style="margin-left: -6px; border: 1.5px solid #fff"
               >
                 {{ person.name.slice(0, 1) }}
               </n-avatar>
@@ -730,7 +746,7 @@ onBeforeUnmount(() => {
                 round
                 :size="26"
                 color="#909399"
-                style="margin-left: -8px; border: 2px solid #fff"
+                style="margin-left: -6px; border: 1.5px solid #fff"
               >
                 +{{ collaborators.length - 4 }}
               </n-avatar>
@@ -745,29 +761,36 @@ onBeforeUnmount(() => {
           </n-space>
         </n-popover>
 
-        <n-tag v-if="connectionStatus !== 'connected'" :type="statusType" size="small" round>
-          {{ statusText }}
-        </n-tag>
-        <n-tag v-else-if="!synced || hasUnsynced" type="info" size="small" round>
-          同步中…
-        </n-tag>
-        <n-tag v-else type="success" size="small" round>✓ 已同步</n-tag>
+        <span role="status" aria-live="polite" class="sync-status">
+          <n-tag v-if="connectionStatus !== 'connected'" :type="statusType" size="small" round>
+            {{ statusText }}
+          </n-tag>
+          <n-tag v-else-if="!synced || hasUnsynced" type="info" size="small" round>
+            同步中…
+          </n-tag>
+          <n-tag v-else type="success" size="small" round>✓ 已同步</n-tag>
+        </span>
       </n-space>
     </div>
 
     <!-- 格式与行列工具条 -->
     <div class="format-bar">
       <n-space align="center" size="small" :wrap="true">
-        <n-button
-          size="tiny"
-          quaternary
-          :type="selectionBold ? 'primary' : 'default'"
-          :disabled="isReadonly"
-          aria-label="加粗"
-          @click="toggleBold"
-        >
-          <strong>B</strong>
-        </n-button>
+        <n-tooltip trigger="hover">
+          <template #trigger>
+            <n-button
+              size="tiny"
+              quaternary
+              :type="selectionBold ? 'primary' : 'default'"
+              :disabled="isReadonly"
+              aria-label="加粗"
+              @click="toggleBold"
+            >
+              <strong>B</strong>
+            </n-button>
+          </template>
+          加粗
+        </n-tooltip>
 
         <n-dropdown :options="TEXT_COLORS.map((c) => ({ key: c, label: 'A', props: { style: `color:${c}` } }))"
           :disabled="isReadonly"
@@ -899,6 +922,23 @@ onBeforeUnmount(() => {
     />
 
     <ShareModal v-model:show="shareVisible" :document-id="docId" />
+
+    <n-modal v-model:show="helpVisible" preset="card" title="快捷键" style="width: 440px; max-width: 92vw">
+      <n-table :bordered="false" :single-line="false" size="small">
+        <thead>
+          <tr><th>快捷键</th><th>作用</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><kbd>方向键</kbd> / <kbd>Tab</kbd></td><td>在单元格间导航</td></tr>
+          <tr><td><kbd>Shift</kbd> + 方向键</td><td>扩展选区</td></tr>
+          <tr><td><kbd>Enter</kbd> / <kbd>F2</kbd></td><td>编辑当前单元格</td></tr>
+          <tr><td><kbd>Enter</kbd> / <kbd>Tab</kbd>（编辑中）</td><td>确认并移至下一格</td></tr>
+          <tr><td><kbd>Esc</kbd></td><td>取消编辑 / 关闭弹层</td></tr>
+          <tr><td><kbd>⌘/Ctrl + ⏎</kbd></td><td>打开评论抽屉</td></tr>
+          <tr><td><kbd>?</kbd></td><td>打开/关闭本说明</td></tr>
+        </tbody>
+      </n-table>
+    </n-modal>
   </div>
 </template>
 
@@ -934,6 +974,11 @@ onBeforeUnmount(() => {
 .title-input:not(:hover):not(.n-input--focus) :deep(.n-input__state-border) {
   border-color: transparent;
 }
+.sync-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
 .avatar-stack {
   display: flex;
   align-items: center;
@@ -968,6 +1013,10 @@ onBeforeUnmount(() => {
   overflow: auto;
   max-height: calc(100vh - 210px);
   cursor: cell;
+}
+.grid-wrap:focus-visible {
+  outline: 2px solid #2080f0;
+  outline-offset: -2px;
 }
 .grid-hint {
   padding: 8px 12px;

@@ -2,8 +2,9 @@
 import { computed, ref, watch } from 'vue'
 import type { Editor } from '@tiptap/vue-3'
 import type { JSONContent } from '@tiptap/core'
-import { useMessage } from 'naive-ui'
+import { useDialog, useMessage } from 'naive-ui'
 import { api, getApiErrorMessage } from '../utils/request'
+import { formatTime } from '../utils/format'
 import { useIsMobile } from '../composables/useIsMobile'
 import type { DocumentVersion } from '../types'
 
@@ -22,6 +23,7 @@ const emit = defineEmits<{
 }>()
 
 const message = useMessage()
+const dialog = useDialog()
 
 const versions = ref<DocumentVersion[]>([])
 const loading = ref(false)
@@ -91,7 +93,7 @@ async function openPreview(version: DocumentVersion): Promise<void> {
   }
 }
 
-async function handleRestore(version: DocumentVersion): Promise<void> {
+async function restoreVersion(version: DocumentVersion): Promise<void> {
   if (!props.editor) return
   restoringId.value = version.id
   try {
@@ -109,6 +111,19 @@ async function handleRestore(version: DocumentVersion): Promise<void> {
   }
 }
 
+/** 恢复会覆盖当前内容，须确认 */
+function handleRestore(version: DocumentVersion): void {
+  if (!props.editor) return
+  dialog.warning({
+    title: '恢复版本',
+    content: '恢复后当前未保存到版本的内容将被该快照覆盖，确定恢复吗？',
+    positiveText: '恢复',
+    negativeText: '取消',
+    positiveButtonProps: { type: 'warning' },
+    onPositiveClick: () => restoreVersion(version),
+  })
+}
+
 async function handleDelete(version: DocumentVersion): Promise<void> {
   deletingId.value = version.id
   try {
@@ -122,10 +137,6 @@ async function handleDelete(version: DocumentVersion): Promise<void> {
   }
 }
 
-function formatTime(value?: string): string {
-  if (!value) return ''
-  return new Date(value).toLocaleString('zh-CN', { hour12: false })
-}
 </script>
 
 <template>
@@ -227,7 +238,7 @@ function formatTime(value?: string): string {
 }
 .preview-body {
   min-height: 200px;
-  font-size: 15px;
+  font-size: 16px;
   line-height: 1.75;
 }
 .preview-body :deep(h1) {

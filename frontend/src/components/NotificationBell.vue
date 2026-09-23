@@ -5,6 +5,7 @@ import { useMessage } from 'naive-ui'
 import { useAuthStore } from '../stores/auth'
 import { useNotificationsStore, type NotificationItem } from '../stores/notifications'
 import { getApiErrorMessage } from '../utils/request'
+import { formatTime } from '../utils/format'
 
 const auth = useAuthStore()
 const notifications = useNotificationsStore()
@@ -70,11 +71,6 @@ async function handleMarkAllRead(): Promise<void> {
   } catch (error) {
     message.error(getApiErrorMessage(error))
   }
-}
-
-function formatTime(value?: string): string {
-  if (!value) return ''
-  return new Date(value).toLocaleString('zh-CN', { hour12: false })
 }
 
 onMounted(() => {
@@ -223,7 +219,7 @@ onBeforeUnmount(() => {
   font-weight: 600;
 }
 .bell-time {
-  font-size: 11px;
+  font-size: 12px;
   color: rgba(0, 0, 0, 0.4);
 }
 </style>
