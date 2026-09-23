@@ -165,6 +165,17 @@ const createMenuOptions = [
   { key: 'excel', label: '📊 Excel 表格（电子表格）' },
 ]
 
+/** 移动端头部收纳的「⋯」菜单（导入/回收站） */
+const moreMenuOptions = [
+  { key: 'import', label: '导入文件' },
+  { key: 'trash', label: '回收站' },
+]
+
+function handleMoreMenu(key: string) {
+  if (key === 'import') openImportPicker()
+  else if (key === 'trash') void router.push('/trash')
+}
+
 async function handleCreate(type: 'md' | 'excel' = 'md') {
   creating.value = true
   try {
@@ -287,44 +298,48 @@ function formatTime(value?: string): string {
 <template>
   <div>
     <div class="list-header">
-      <h2 style="margin: 0">{{ documents.searching ? '搜索结果' : '文档' }}</h2>
-      <n-space align="center" class="header-actions">
-        <n-select
-          v-model:value="sortBy"
-          :options="sortOptions"
-          size="small"
-          aria-label="排序方式"
-          style="width: 110px"
-        />
-        <n-button-group size="small" aria-label="视图切换">
-          <n-button
-            :type="viewMode === 'list' ? 'primary' : 'default'"
-            @click="viewMode = 'list'"
-          >
-            列表
-          </n-button>
-          <n-button
-            :type="viewMode === 'grid' ? 'primary' : 'default'"
-            @click="viewMode = 'grid'"
-          >
-            网格
-          </n-button>
-        </n-button-group>
-        <n-input
-          ref="searchBoxRef"
-          v-model:value="searchInput"
-          name="document-search"
-          clearable
-          placeholder="搜索标题或正文…（/ 或 ⌘K 聚焦）"
-          aria-label="搜索文档"
-          class="search-box"
-        />
-        <n-dropdown :options="createMenuOptions" @select="handleCreateMenu">
-          <n-button type="primary" :loading="creating">新建 ▾</n-button>
-        </n-dropdown>
-        <n-button :loading="importing" @click="openImportPicker">导入</n-button>
-        <n-button quaternary @click="router.push('/trash')">回收站</n-button>
-      </n-space>
+      <h2>{{ documents.searching ? '搜索结果' : '文档' }}</h2>
+      <n-select
+        v-model:value="sortBy"
+        :options="sortOptions"
+        size="small"
+        aria-label="排序方式"
+        class="ctl-sort"
+      />
+      <n-button-group size="small" aria-label="视图切换" class="ctl-view">
+        <n-button
+          :type="viewMode === 'list' ? 'primary' : 'default'"
+          @click="viewMode = 'list'"
+        >
+          列表
+        </n-button>
+        <n-button
+          :type="viewMode === 'grid' ? 'primary' : 'default'"
+          @click="viewMode = 'grid'"
+        >
+          网格
+        </n-button>
+      </n-button-group>
+      <n-input
+        ref="searchBoxRef"
+        v-model:value="searchInput"
+        name="document-search"
+        clearable
+        placeholder="搜索标题或正文…（/ 或 ⌘K 聚焦）"
+        aria-label="搜索文档"
+        class="search-box"
+      />
+      <n-dropdown :options="createMenuOptions" @select="handleCreateMenu">
+        <n-button type="primary" :loading="creating" class="ctl-create">新建 ▾</n-button>
+      </n-dropdown>
+      <!-- 桌面平铺；移动端收进「⋯」（与列表行操作的收纳策略一致） -->
+      <template v-if="!isMobile">
+        <n-button :loading="importing" class="ctl-import" @click="openImportPicker">导入</n-button>
+        <n-button quaternary class="ctl-trash" @click="router.push('/trash')">回收站</n-button>
+      </template>
+      <n-dropdown v-else :options="moreMenuOptions" @select="handleMoreMenu">
+        <n-button quaternary aria-label="更多操作" class="ctl-more">⋯</n-button>
+      </n-dropdown>
       <input
         ref="fileInputRef"
         type="file"
@@ -561,13 +576,17 @@ function formatTime(value?: string): string {
 .list-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: 10px 12px;
   margin-bottom: 16px;
 }
-.header-actions {
-  flex-wrap: wrap;
+/* 标题占左侧余下空间，控件整体靠右（替代原 space-between 双容器结构） */
+.list-header h2 {
+  margin: 0;
+  margin-right: auto;
+}
+.ctl-sort {
+  width: 110px;
 }
 .search-box {
   width: min(260px, 100%);
@@ -627,8 +646,23 @@ function formatTime(value?: string): string {
   margin-left: -6px;
 }
 @media (max-width: 767px) {
+  /* 移动端三行布局：①标题+新建 ②搜索全宽 ③排序+视图+⋯ */
+  .ctl-create {
+    order: 1;
+  }
   .search-box {
+    order: 2;
+    flex: 1 0 100%;
     width: 100%;
+  }
+  .ctl-sort {
+    order: 3;
+  }
+  .ctl-view {
+    order: 4;
+  }
+  .ctl-more {
+    order: 5;
   }
   .list-header h2 {
     font-size: 16px;

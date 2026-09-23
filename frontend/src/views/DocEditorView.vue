@@ -388,7 +388,7 @@ async function handleRename() {
         />
         <n-tag v-if="isReadonly" size="small" type="warning" round>🔒 只读</n-tag>
       </n-space>
-      <n-space align="center" size="small">
+      <n-space align="center" size="small" :wrap="true">
         <n-button quaternary size="small" aria-label="快捷键说明" @click="helpVisible = true">?</n-button>
         <n-button v-if="canRename" quaternary size="small" @click="shareVisible = true">共享</n-button>
         <n-dropdown :options="exportOptions" :disabled="exporting" @select="handleExport">
@@ -562,7 +562,7 @@ async function handleRename() {
       />
     </n-modal>
 
-    <n-modal v-model:show="helpVisible" preset="card" title="快捷键" style="width: 440px">
+    <n-modal v-model:show="helpVisible" preset="card" title="快捷键" style="width: 440px; max-width: 92vw">
       <n-table :bordered="false" :single-line="false" size="small">
         <thead>
           <tr><th>快捷键</th><th>作用</th></tr>
@@ -587,6 +587,7 @@ async function handleRename() {
 <style scoped>
 .editor-page {
   min-height: 100vh;
+  min-height: 100dvh; /* 移动端地址栏伸缩时视口高度跟随 */
   display: flex;
   flex-direction: column;
   background: var(--bg-page);
@@ -599,6 +600,8 @@ async function handleRename() {
   flex-wrap: wrap;
   gap: 8px;
   padding: 8px 16px;
+  padding-left: calc(16px + env(safe-area-inset-left));
+  padding-right: calc(16px + env(safe-area-inset-right));
   background: var(--bg-surface);
   border-bottom: 1px solid var(--border-subtle);
 }
@@ -646,6 +649,7 @@ async function handleRename() {
   border-radius: 8px;
   box-shadow: var(--shadow-card);
   min-height: calc(100vh - 128px);
+  min-height: calc(100dvh - 128px);
 }
 .editor-surface :deep(.fmt-toolbar) {
   margin: 0 -56px;
@@ -669,6 +673,13 @@ async function handleRename() {
   visibility: hidden;
   opacity: 0;
   transition: opacity 0.12s ease;
+}
+/* 触屏（粗指针）：tiny 按钮点击区放大到 36px，桌面视觉不变 */
+@media (pointer: coarse) {
+  .bubble-menu :deep(.n-button) {
+    min-width: 36px;
+    min-height: 36px;
+  }
 }
 :deep(.doc-editor-content) {
   /* 不加 :focus-visible 描边：contentEditable 鼠标点入也会命中，

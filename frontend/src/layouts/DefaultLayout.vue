@@ -31,14 +31,14 @@ function handleUserMenu(key: string) {
 </script>
 
 <template>
-  <n-layout style="min-height: 100vh">
+  <n-layout class="app-layout">
     <n-layout-header bordered class="layout-header">
       <router-link to="/" class="brand">多人实时协作文档</router-link>
       <n-space align="center">
         <template v-if="auth.user">
           <NotificationBell />
           <n-dropdown :options="[{ key: 'logout', label: renderLogoutLabel }]" @select="handleUserMenu">
-            <n-button text>
+            <n-button text class="user-btn">
               {{ auth.user.name }}
             </n-button>
           </n-dropdown>
@@ -49,24 +49,50 @@ function handleUserMenu(key: string) {
         </template>
       </n-space>
     </n-layout-header>
-    <n-layout-content content-style="padding: 24px">
+    <n-layout-content class="layout-content">
       <router-view />
     </n-layout-content>
   </n-layout>
 </template>
 
 <style scoped>
+.app-layout {
+  min-height: 100vh;
+  min-height: 100dvh; /* 移动端地址栏伸缩时视口高度跟随 */
+}
 .layout-header {
-  height: 56px;
+  min-height: 56px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 24px;
+  flex-wrap: wrap; /* 窄屏允许换行，配合品牌/用户名省略 */
+  gap: 4px 12px;
+  padding: 8px 24px;
+  padding-left: calc(24px + env(safe-area-inset-left));
+  padding-right: calc(24px + env(safe-area-inset-right));
 }
 .brand {
   font-size: 18px;
   font-weight: 600;
   color: inherit;
   text-decoration: none;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 长用户名不挤压头部 */
+.user-btn {
+  max-width: 140px;
+}
+.user-btn :deep(.n-button__content) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.layout-content {
+  padding: 24px;
+  padding-left: calc(24px + env(safe-area-inset-left));
+  padding-right: calc(24px + env(safe-area-inset-right));
 }
 </style>

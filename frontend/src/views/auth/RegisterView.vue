@@ -81,7 +81,7 @@ async function handleSubmit() {
   padding-top: 64px;
 }
 .auth-card {
-  width: 400px;
+  width: min(400px, calc(100vw - 32px));
 }
 .auth-alert {
   margin-bottom: 16px;

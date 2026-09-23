@@ -704,7 +704,7 @@ onBeforeUnmount(() => {
         <n-tag size="small" type="success" round>表格</n-tag>
         <n-tag v-if="isReadonly" size="small" type="warning" round>🔒 只读</n-tag>
       </n-space>
-      <n-space align="center" size="small">
+      <n-space align="center" size="small" :wrap="true">
         <n-button quaternary size="small" aria-label="快捷键说明" @click="helpVisible = true">?</n-button>
         <n-button v-if="canRename" quaternary size="small" @click="shareVisible = true">共享</n-button>
         <n-button
@@ -901,7 +901,7 @@ onBeforeUnmount(() => {
         </table>
       </div>
       <div class="grid-hint">
-        单击编辑（支持中文输入法）· 拖拽 / Shift+点击框选 · Enter 确认 · Esc 取消 · 方向键与 Tab 导航
+        点按编辑（支持中文输入法）· 拖动 / Shift+点按框选 · Enter 确认 · Esc 取消 · 方向键与 Tab 导航
         · 公式示例：=A1+B2、=SUM(A1:A9)
       </div>
     </div>
@@ -945,6 +945,7 @@ onBeforeUnmount(() => {
 <style scoped>
 .sheet-page {
   min-height: 100vh;
+  min-height: 100dvh; /* 移动端地址栏伸缩时视口高度跟随 */
   display: flex;
   flex-direction: column;
   background: var(--bg-page);
@@ -957,6 +958,8 @@ onBeforeUnmount(() => {
   flex-wrap: wrap;
   gap: 8px;
   padding: 8px 16px;
+  padding-left: calc(16px + env(safe-area-inset-left));
+  padding-right: calc(16px + env(safe-area-inset-right));
   background: var(--bg-surface);
   border-bottom: 1px solid var(--border-subtle);
 }
@@ -964,6 +967,13 @@ onBeforeUnmount(() => {
   padding: 6px 16px;
   background: var(--bg-surface);
   border-bottom: 1px solid var(--border-faint);
+}
+/* 触屏（粗指针）：格式条 tiny 按钮点击区放大到 36px，桌面视觉不变 */
+@media (pointer: coarse) {
+  .format-bar :deep(.n-button) {
+    min-width: 36px;
+    min-height: 36px;
+  }
 }
 .title-input {
   width: min(320px, 42vw);
@@ -1012,6 +1022,7 @@ onBeforeUnmount(() => {
   outline: none;
   overflow: auto;
   max-height: calc(100vh - 210px);
+  max-height: calc(100dvh - 210px);
   cursor: cell;
 }
 .grid-wrap:focus-visible {
