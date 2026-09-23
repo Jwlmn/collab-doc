@@ -671,14 +671,12 @@ async function handleRename() {
   transition: opacity 0.12s ease;
 }
 :deep(.doc-editor-content) {
+  /* 不加 :focus-visible 描边：contentEditable 鼠标点入也会命中，
+     整块蓝色边框看起来像输入框错位；光标本身已表达聚焦 */
   outline: none;
   font-size: 16px;
   line-height: 1.75;
   min-height: 60vh;
-}
-:deep(.doc-editor-content):focus-visible {
-  outline: 2px solid #2080f0;
-  outline-offset: 2px;
 }
 :deep(.doc-editor-content > h1) {
   font-size: 2em;
