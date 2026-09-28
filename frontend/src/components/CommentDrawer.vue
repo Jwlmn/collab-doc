@@ -219,8 +219,11 @@ async function handleDelete(comment: Comment): Promise<void> {
   <n-drawer :show="show" :width="isMobile ? '100%' : 420" placement="right" @update:show="emit('update:show', $event)">
     <n-drawer-content title="评论" closable>
       <div class="comment-body">
-        <n-spin :show="loading">
-          <div ref="listWrapRef" class="comment-list-wrap">
+        <!-- n-spin 必须包在 list-wrap 内部：它是 comment-body 的直接子元素时
+             会占据唯一的 flex 位，导致 list-wrap 的 flex:1 落在非 flex 容器里失效，
+             列表被压成一行、输入区下方留出大片空白 -->
+        <div ref="listWrapRef" class="comment-list-wrap">
+          <n-spin :show="loading" class="list-spin">
             <n-empty
               v-if="!loading && comments.length === 0"
               description="还没有评论，输入 @ 可提及协作者"
@@ -256,8 +259,8 @@ async function handleDelete(comment: Comment): Promise<void> {
               </div>
             </div>
             </div>
-          </div>
-        </n-spin>
+          </n-spin>
+        </div>
 
         <div class="comment-input-wrap">
           <div
@@ -324,11 +327,15 @@ async function handleDelete(comment: Comment): Promise<void> {
   flex-direction: column;
   height: 100%;
 }
+/* 吃掉除输入区外的全部高度，超出部分自身滚动 */
 .comment-list-wrap {
   flex: 1;
   min-height: 0;
-  max-height: 55vh;
   overflow-y: auto;
+}
+/* loading 遮罩要盖满整个滚动区，而不是只盖内容 */
+.list-spin {
+  min-height: 100%;
 }
 .comment-list {
   display: flex;
@@ -368,9 +375,13 @@ async function handleDelete(comment: Comment): Promise<void> {
   padding: 0 4px;
   font-weight: 500;
 }
+/* 吸底的输入栏：不参与收缩，与滚动区之间用边框分隔 */
 .comment-input-wrap {
   position: relative;
-  margin-top: 16px;
+  flex: none;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-subtle);
 }
 .mention-popup {
   position: absolute;
