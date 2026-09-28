@@ -18,8 +18,10 @@ class DocumentVersion extends Model
     protected $fillable = [
         'user_id',
         'name',
+        'kind',
         'content_json',
         'content_html',
+        'content_hash',
     ];
 
     /**

@@ -149,4 +149,133 @@ class DocumentVersionTest extends TestCase
             ->getJson("/api/documents/{$documentB->id}/versions/{$versionOfA->id}")
             ->assertNotFound();
     }
+
+    public function test_list_returns_kind_field(): void
+    {
+        $user = User::factory()->create();
+        $document = Document::factory()->for($user)->create();
+        DocumentVersion::factory()->for($document)->for($user)->create(['kind' => 'auto']);
+
+        $this->actingAs($user)
+            ->getJson("/api/documents/{$document->id}/versions")
+            ->assertOk()
+            ->assertJsonPath('data.0.kind', 'auto');
+    }
+
+    public function test_kind_rejects_restore_source(): void
+    {
+        $user = User::factory()->create();
+        $document = Document::factory()->for($user)->create();
+
+        $this->actingAs($user)
+            ->postJson("/api/documents/{$document->id}/versions", $this->validPayload() + ['kind' => 'restore'])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['kind']);
+    }
+
+    public function test_content_hash_is_computed_server_side(): void
+    {
+        $user = User::factory()->create();
+        $document = Document::factory()->for($user)->create();
+
+        // 客户端伪造 content_hash 也不生效：服务端按 content_json 重新计算
+        $this->actingAs($user)
+            ->postJson("/api/documents/{$document->id}/versions", $this->validPayload() + ['content_hash' => 'deadbeef'])
+            ->assertCreated();
+
+        $expected = hash('sha256', json_encode($this->validPayload()['content_json'], JSON_UNESCAPED_UNICODE));
+        $this->assertDatabaseHas('document_versions', [
+            'document_id' => $document->id,
+            'content_hash' => $expected,
+        ]);
+    }
+
+    public function test_duplicate_content_with_same_name_is_deduped(): void
+    {
+        $user = User::factory()->create();
+        $document = Document::factory()->for($user)->create();
+
+        $this->actingAs($user)
+            ->postJson("/api/documents/{$document->id}/versions", $this->validPayload())
+            ->assertCreated();
+
+        // 同内容同名再存一次 → 不新建
+        $this->actingAs($user)
+            ->postJson("/api/documents/{$document->id}/versions", $this->validPayload())
+            ->assertOk();
+
+        $this->assertSame(1, $document->versions()->count());
+    }
+
+    public function test_same_content_under_different_name_still_creates(): void
+    {
+        $user = User::factory()->create();
+        $document = Document::factory()->for($user)->create();
+
+        $this->actingAs($user)
+            ->postJson("/api/documents/{$document->id}/versions", $this->validPayload())
+            ->assertCreated();
+        $renamed = array_merge($this->validPayload(), ['name' => '终稿']);
+        $this->actingAs($user)
+            ->postJson("/api/documents/{$document->id}/versions", $renamed)
+            ->assertCreated();
+
+        $this->assertSame(2, $document->versions()->count());
+    }
+
+    public function test_auto_snapshot_is_rate_limited_within_window(): void
+    {
+        $user = User::factory()->create();
+        $document = Document::factory()->for($user)->create();
+
+        $this->actingAs($user)
+            ->postJson("/api/documents/{$document->id}/versions", $this->validPayload() + ['kind' => 'auto'])
+            ->assertCreated();
+
+        // 内容变了但仍在 5 分钟窗口内 → 复用上一条
+        $second = array_merge($this->validPayload(), [
+            'kind' => 'auto',
+            'content_json' => ['type' => 'doc', 'content' => [['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => '第二版']]]]],
+            'content_html' => '<p>第二版</p>',
+        ]);
+        $this->actingAs($user)
+            ->postJson("/api/documents/{$document->id}/versions", $second)
+            ->assertOk();
+
+        $this->assertSame(1, $document->versions()->count());
+    }
+
+    public function test_auto_snapshot_created_after_window_is_kept(): void
+    {
+        $user = User::factory()->create();
+        $document = Document::factory()->for($user)->create();
+        DocumentVersion::factory()->for($document)->for($user)->create([
+            'kind' => 'auto',
+            'created_at' => now()->subMinutes(10),
+        ]);
+
+        $this->actingAs($user)
+            ->postJson("/api/documents/{$document->id}/versions", $this->validPayload() + ['kind' => 'auto'])
+            ->assertCreated();
+
+        $this->assertSame(2, $document->versions()->count());
+    }
+
+    public function test_auto_snapshots_are_pruned_beyond_cap(): void
+    {
+        $user = User::factory()->create();
+        $document = Document::factory()->for($user)->create();
+        // 造 20 条自动快照（10 分钟前，绕开限流窗口）
+        DocumentVersion::factory()->count(20)->for($document)->for($user)->create([
+            'kind' => 'auto',
+            'created_at' => now()->subMinutes(10),
+        ]);
+
+        $this->actingAs($user)
+            ->postJson("/api/documents/{$document->id}/versions", $this->validPayload() + ['kind' => 'auto'])
+            ->assertCreated();
+
+        // 20 条旧的 + 1 条新的 = 21，超出上限 20 → 最旧一条被淘汰
+        $this->assertSame(20, $document->versions()->where('kind', 'auto')->count());
+    }
 }

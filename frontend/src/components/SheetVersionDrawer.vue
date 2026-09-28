@@ -4,7 +4,13 @@ import { useDialog, useMessage } from 'naive-ui'
 import { api, getApiErrorMessage } from '../utils/request'
 import { formatTime } from '../utils/format'
 import { useIsMobile } from '../composables/useIsMobile'
+import { gridToHtml } from '../io/sheet-model'
 import type { SheetCell } from '../io/sheet-model'
+import {
+  describeGridDiff,
+  diffGrids,
+  type GridDiff,
+} from '../io/version-diff'
 import type { DocumentVersion } from '../types'
 
 /** Excel 文档的版本快照载荷 */
@@ -37,6 +43,10 @@ const versionName = ref('')
 
 const previewVisible = ref(false)
 const previewVersion = ref<DocumentVersion | null>(null)
+/** 预览弹窗页签：快照本身 vs 与当前网格的差异 */
+const previewTab = ref<'snapshot' | 'diff'>('snapshot')
+/** 对比结果惰性计算：切到「与当前对比」才跑 */
+const previewDiff = ref<GridDiff | null>(null)
 const restoringId = ref<number | null>(null)
 const deletingId = ref<number | null>(null)
 const previewingId = ref<number | null>(null)
@@ -70,10 +80,13 @@ async function handleSave(): Promise<void> {
     const payload = {
       name: versionName.value.trim() || null,
       content_json: snapshot,
-      content_html: snapshotToHtml(snapshot),
+      content_html: gridToHtml(snapshot.grid),
     }
     const { data } = await api.post(`/documents/${props.documentId}/versions`, payload)
-    versions.value.unshift(data.data)
+    // 后端可能复用既有版本，按 id 去重避免重复项
+    if (!versions.value.some((item) => item.id === data.data.id)) {
+      versions.value.unshift(data.data)
+    }
     versionName.value = ''
     message.success('版本已保存')
   } catch (error) {
@@ -83,33 +96,13 @@ async function handleSave(): Promise<void> {
   }
 }
 
-function snapshotToHtml(snapshot: SheetSnapshot): string {
-  // 复用简单渲染（避免循环依赖，独立小实现）
-  const grid = snapshot.grid ?? []
-  if (grid.length === 0) return '<p>（空表格）</p>'
-  const rows = grid
-    .map((line, ri) => {
-      const cells = line
-        .map((cell) => {
-          const esc = (cell.v ?? '')
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-          const tag = ri === 0 ? 'th' : 'td'
-          return `<${tag}>${esc}</${tag}>`
-        })
-        .join('')
-      return `<tr>${cells}</tr>`
-    })
-    .join('')
-  return `<table border="1" cellspacing="0" cellpadding="4">${rows}</table>`
-}
-
 async function openPreview(version: DocumentVersion): Promise<void> {
   previewingId.value = version.id
   try {
     const { data } = await api.get(`/documents/${props.documentId}/versions/${version.id}`)
     previewVersion.value = data.data
+    previewTab.value = 'snapshot'
+    previewDiff.value = null
     previewVisible.value = true
   } catch (error) {
     message.error(getApiErrorMessage(error))
@@ -118,7 +111,45 @@ async function openPreview(version: DocumentVersion): Promise<void> {
   }
 }
 
+/**
+ * 计算「恢复这个版本，网格会怎么变」：当前网格 → 快照网格。
+ * 汇总文案给出行/格级改动数量。
+ */
+function computePreviewDiff(): void {
+  const snapshot = previewVersion.value?.content_json as unknown as SheetSnapshot | undefined
+  const current = props.capture()
+  if (!snapshot || !Array.isArray(snapshot.grid) || !current) {
+    previewDiff.value = null
+    return
+  }
+  previewDiff.value = diffGrids(current.grid, snapshot.grid)
+}
+
+function handlePreviewTab(tab: 'snapshot' | 'diff'): void {
+  previewTab.value = tab
+  if (tab === 'diff' && previewDiff.value === null) computePreviewDiff()
+}
+
+/**
+ * 恢复前把当前网格存成备份版本 —— 恢复错了还能再恢复回去。
+ * 备份失败不阻断恢复（内容与最新版本相同时后端会去重）。
+ */
+async function backupBeforeRestore(): Promise<void> {
+  const snapshot = props.capture()
+  if (!snapshot) return
+  try {
+    await api.post(`/documents/${props.documentId}/versions`, {
+      name: '恢复前自动保存',
+      content_json: snapshot,
+      content_html: gridToHtml(snapshot.grid),
+    })
+  } catch (error) {
+    console.warn('[version] 恢复前备份失败', error)
+  }
+}
+
 async function restoreVersion(version: DocumentVersion): Promise<void> {
+  if (props.readonly) return
   restoringId.value = version.id
   try {
     const { data } = await api.get(`/documents/${props.documentId}/versions/${version.id}`)
@@ -128,6 +159,7 @@ async function restoreVersion(version: DocumentVersion): Promise<void> {
       message.error('版本快照格式无效')
       return
     }
+    await backupBeforeRestore()
     props.restore(payload.grid)
     emit('update:show', false)
     message.success(`已恢复到「${snapshot.name ?? formatTime(snapshot.created_at)}」`)
@@ -140,6 +172,7 @@ async function restoreVersion(version: DocumentVersion): Promise<void> {
 
 /** 恢复会覆盖当前表格内容，须确认 */
 function handleRestore(version: DocumentVersion): void {
+  if (props.readonly) return
   dialog.warning({
     title: '恢复版本',
     content: '恢复后当前表格内容将被该快照覆盖，确定恢复吗？',
@@ -151,6 +184,7 @@ function handleRestore(version: DocumentVersion): void {
 }
 
 async function handleDelete(version: DocumentVersion): Promise<void> {
+  if (props.readonly) return
   deletingId.value = version.id
   try {
     await api.delete(`/documents/${props.documentId}/versions/${version.id}`)
@@ -197,9 +231,14 @@ async function handleDelete(version: DocumentVersion): Promise<void> {
           <n-list-item v-for="version in versions" :key="version.id">
             <n-thing :title="version.name || '未命名版本'">
               <template #description>
-                <n-text depth="3" style="font-size: 12px">
-                  {{ version.user?.name ?? '未知用户' }} · {{ formatTime(version.created_at) }}
-                </n-text>
+                <n-space :size="6" align="center" :wrap="true">
+                  <n-tag v-if="version.kind && version.kind !== 'manual'" size="tiny" round>
+                    自动
+                  </n-tag>
+                  <n-text depth="3" style="font-size: 12px">
+                    {{ version.user?.name ?? '未知用户' }} · {{ formatTime(version.created_at) }}
+                  </n-text>
+                </n-space>
               </template>
             </n-thing>
             <template #suffix>
@@ -224,7 +263,13 @@ async function handleDelete(version: DocumentVersion): Promise<void> {
                 </n-button>
                 <n-popconfirm @positive-click="handleDelete(version)">
                   <template #trigger>
-                    <n-button size="tiny" type="error" quaternary :loading="deletingId === version.id">
+                    <n-button
+                      size="tiny"
+                      type="error"
+                      quaternary
+                      :disabled="readonly"
+                      :loading="deletingId === version.id"
+                    >
                       删除
                     </n-button>
                   </template>
@@ -242,7 +287,43 @@ async function handleDelete(version: DocumentVersion): Promise<void> {
         style="width: min(720px, 92vw)"
         :title="previewVersion?.name || '版本预览'"
       >
-        <div class="preview-body" v-html="previewVersion?.content_html ?? ''" />
+        <n-tabs type="line" :value="previewTab" @update:value="handlePreviewTab">
+          <n-tab-pane name="snapshot" tab="快照内容">
+            <div class="preview-body" v-html="previewVersion?.content_html ?? ''" />
+          </n-tab-pane>
+          <n-tab-pane name="diff" tab="与当前对比">
+            <div v-if="!previewDiff" class="preview-empty">当前内容不可用，无法对比</div>
+            <div v-else class="preview-diff">
+              <div class="diff-summary">{{ describeGridDiff(previewDiff) }}</div>
+              <div class="diff-table-wrap">
+                <table class="diff-table">
+                  <tbody>
+                    <tr
+                      v-for="(row, rowIndex) in previewDiff.rows"
+                      :key="rowIndex"
+                      :class="`diff-row-${row.status}`"
+                    >
+                      <td
+                        v-for="cellItem in row.cells"
+                        :key="cellItem.col"
+                        :class="cellItem.status !== 'same' ? `diff-cell-${cellItem.status}` : ''"
+                        :title="cellItem.status === 'changed' ? `${cellItem.before} → ${cellItem.after}` : ''"
+                      >
+                        <!-- changed 展示前后对照；其余展示恢复后的取值 -->
+                        <template v-if="cellItem.status === 'changed'">
+                          <span class="diff-before">{{ cellItem.before }}</span>
+                          <span class="diff-arrow">→</span>
+                          <span class="diff-after">{{ cellItem.after }}</span>
+                        </template>
+                        <template v-else>{{ cellItem.text }}</template>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </n-tab-pane>
+        </n-tabs>
         <template #footer>
           <n-space justify="end">
             <n-button @click="previewVisible = false">关闭</n-button>
@@ -284,5 +365,61 @@ async function handleDelete(version: DocumentVersion): Promise<void> {
 }
 .preview-body :deep(th) {
   background: #f2f3f5;
+}
+.preview-empty {
+  color: #909399;
+  text-align: center;
+  padding: 32px 0;
+}
+.preview-diff {
+  max-height: 55vh;
+  overflow: auto;
+}
+.diff-summary {
+  font-size: 13px;
+  color: #4e5969;
+  margin-bottom: 8px;
+}
+.diff-table-wrap {
+  overflow: auto;
+}
+.diff-table {
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.diff-table :deep(td) {
+  border: 1px solid #e5e6eb;
+  padding: 4px 8px;
+  min-width: 64px;
+}
+.diff-cell-changed {
+  background: #fff7e6;
+  color: #ad6800;
+}
+.diff-before {
+  text-decoration: line-through;
+  opacity: 0.65;
+}
+.diff-arrow {
+  margin: 0 4px;
+  opacity: 0.6;
+}
+.diff-after {
+  font-weight: 600;
+}
+.diff-cell-added {
+  background: #e8f7ee;
+  color: #1a7f37;
+}
+.diff-cell-removed {
+  background: #fdeceb;
+  color: #b42318;
+  text-decoration: line-through;
+}
+.diff-row-added > td:first-child {
+  box-shadow: inset 3px 0 0 #1a7f37;
+}
+.diff-row-removed > td:first-child {
+  box-shadow: inset 3px 0 0 #b42318;
 }
 </style>

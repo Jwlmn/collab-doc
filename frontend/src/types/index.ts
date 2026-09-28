@@ -70,6 +70,8 @@ export interface DocumentVersion {
   id: number
   document_id: number
   name: string | null
+  /** 来源：manual 手动 / auto 自动快照 / restore 恢复前备份 */
+  kind?: 'manual' | 'auto' | 'restore'
   /** 列表接口不返回内容字段，预览/恢复时经 show 获取 */
   content_json?: Record<string, unknown>
   content_html?: string

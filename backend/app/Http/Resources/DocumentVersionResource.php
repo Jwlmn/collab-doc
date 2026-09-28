@@ -18,6 +18,7 @@ class DocumentVersionResource extends JsonResource
             'id' => $this->id,
             'document_id' => $this->document_id,
             'name' => $this->name,
+            'kind' => $this->kind ?? 'manual',
             'content_json' => $this->content_json,
             'content_html' => $this->content_html,
             'user' => [
