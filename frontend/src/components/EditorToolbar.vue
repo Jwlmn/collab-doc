@@ -149,7 +149,7 @@ function handleTableMenu(key: string) {
         <n-button
           size="small"
           quaternary
-          aria-label="撤销"
+          aria-label="↶（撤销）"
           :disabled="readonly"
           @click="run((c) => c.undo())"
         >
@@ -163,7 +163,7 @@ function handleTableMenu(key: string) {
         <n-button
           size="small"
           quaternary
-          aria-label="重做"
+          aria-label="↷（重做）"
           :disabled="readonly"
           @click="run((c) => c.redo())"
         >
@@ -180,7 +180,7 @@ function handleTableMenu(key: string) {
         <n-button
           size="small"
           quaternary
-          aria-label="加粗"
+          aria-label="加粗 B"
           :type="isActive('bold') ? 'primary' : 'default'"
           :disabled="readonly"
           @click="run((c) => c.toggleBold())"
@@ -195,7 +195,7 @@ function handleTableMenu(key: string) {
         <n-button
           size="small"
           quaternary
-          aria-label="斜体"
+          aria-label="斜体 I"
           :type="isActive('italic') ? 'primary' : 'default'"
           :disabled="readonly"
           @click="run((c) => c.toggleItalic())"
@@ -210,7 +210,7 @@ function handleTableMenu(key: string) {
         <n-button
           size="small"
           quaternary
-          aria-label="删除线"
+          aria-label="~~（删除线）"
           :type="isActive('strike') ? 'primary' : 'default'"
           :disabled="readonly"
           @click="run((c) => c.toggleStrike())"
@@ -228,7 +228,7 @@ function handleTableMenu(key: string) {
         <n-button
           size="small"
           quaternary
-          :aria-label="`标题 ${level}`"
+          :aria-label="`H${level}（标题 ${level}）`"
           :type="isActive('heading', { level }) ? 'primary' : 'default'"
           :disabled="readonly"
           @click="run((c) => c.toggleHeading({ level: level as 1 | 2 | 3 }))"
@@ -246,7 +246,7 @@ function handleTableMenu(key: string) {
         <n-button
           size="small"
           quaternary
-          aria-label="无序列表"
+          aria-label="• 列表（无序列表）"
           :type="isActive('bulletList') ? 'primary' : 'default'"
           :disabled="readonly"
           @click="run((c) => c.toggleBulletList())"
@@ -261,7 +261,7 @@ function handleTableMenu(key: string) {
         <n-button
           size="small"
           quaternary
-          aria-label="有序列表"
+          aria-label="1. 列表（有序列表）"
           :type="isActive('orderedList') ? 'primary' : 'default'"
           :disabled="readonly"
           @click="run((c) => c.toggleOrderedList())"
@@ -309,7 +309,7 @@ function handleTableMenu(key: string) {
         <n-button
           size="small"
           quaternary
-          aria-label="分割线"
+          aria-label="—（分割线）"
           :disabled="readonly"
           @click="run((c) => c.setHorizontalRule())"
         >

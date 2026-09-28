@@ -283,7 +283,7 @@ async function copyInviteLink(): Promise<void> {
           aria-label="邀请用户名或邮箱"
           @keydown="handleInviteKeydown"
           @blur="closeSuggest"
-        />
+         name="invite-query" id="invite-query" />
         <div
           v-if="suggestOpen && suggestions.length > 0"
           class="suggest-popup"
@@ -313,7 +313,7 @@ async function copyInviteLink(): Promise<void> {
           { label: '可编辑', value: 'editor' },
         ]"
         style="width: 110px"
-      />
+       name="invite-role" id="invite-role" />
       <n-button type="primary" :loading="adding" @click="handleAdd">添加</n-button>
     </div>
 
@@ -341,7 +341,7 @@ async function copyInviteLink(): Promise<void> {
           size="small"
           aria-label="链接有效期"
           style="width: 130px"
-        />
+         name="share-expiry" id="share-expiry" />
         <n-button type="primary" size="small" :loading="creatingShare" @click="createShareLink">
           {{ shareLink ? '重新签发' : '生成链接' }}
         </n-button>
@@ -354,7 +354,7 @@ async function copyInviteLink(): Promise<void> {
           size="small"
           aria-label="公开分享链接"
           @focus="($event.target as HTMLInputElement).select()"
-        />
+         name="share-link" id="share-link" />
         <n-space size="small" style="margin-top: 8px">
           <n-button size="small" quaternary @click="copyShareLink">复制</n-button>
           <n-popconfirm @positive-click="revokeShareLink">
@@ -390,6 +390,8 @@ async function copyInviteLink(): Promise<void> {
                   { label: '可编辑', value: 'editor' },
                 ]"
                 style="width: 100px"
+                name="member-role"
+                id="member-role"
                 @update:value="(value: 'viewer' | 'editor') => handleRoleChange(member, value)"
               />
               <n-popconfirm @positive-click="handleRemove(member)">
@@ -425,7 +427,7 @@ async function copyInviteLink(): Promise<void> {
       readonly
       aria-label="邀请链接"
       @focus="($event.target as HTMLInputElement).select()"
-    />
+     name="invite-link-fallback" id="invite-link-fallback" />
   </n-modal>
 </template>
 

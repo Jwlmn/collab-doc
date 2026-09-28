@@ -47,3 +47,37 @@ body {
 .page-fade-leave-to {
   opacity: 0;
 }
+
+/* 跳过导航链接：默认视觉隐藏，聚焦时显形（键盘用户第一个 Tab 即可达主内容） */
+.skip-link {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 10000;
+  padding: 8px 14px;
+  background: #2080f0;
+  color: #fff;
+  border-radius: 6px;
+  font-size: 14px;
+  text-decoration: none;
+  transform: translateY(-200%);
+  transition: transform 0.12s ease;
+}
+.skip-link:focus {
+  transform: translateY(0);
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
+
+/* 尊重系统「减少动态效果」设置：关掉页面过渡与装饰性动画 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+

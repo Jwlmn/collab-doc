@@ -24,6 +24,29 @@ export interface CellStyle {
 
 export type SheetCell = CellStyle & { v: string }
 
+/** 条件格式的比较方式 */
+export type CfOp = 'gt' | 'lt' | 'gte' | 'lte' | 'eq' | 'neq' | 'contains' | 'between'
+
+/** 条件格式规则：命中区间内的单元格按 value 比较，命中则套用 style */
+export interface CfRule {
+  r1: number
+  c1: number
+  r2: number
+  c2: number
+  op: CfOp
+  value: number | string
+  /** between 时的上界 */
+  value2?: number | string
+  style: CellStyle
+}
+
+/** 快照里的 meta 段（尺寸 + 条件格式），旧快照无此字段则保持现状 */
+export interface SheetMeta {
+  colWidths?: Record<string, number>
+  rowHeights?: Record<string, number>
+  cfRules?: Record<string, CfRule>
+}
+
 export type CellValue = string | SheetCell
 
 /** 导入/兼容层的稀疏文本表：key = `${row},${col}` */
@@ -46,12 +69,35 @@ export class SheetModel {
   /** 已挂观察器的行（避免重复 observe） */
   private readonly observedRows = new WeakSet<Y.Map<CellValue>>()
 
+  /**
+   * 顶层 meta：列宽/行高/条件格式规则。
+   * 值是嵌套的 Y.Map（colWidths / rowHeights / cfRules），随整个 Y.Doc
+   * 经 HocusPocus 持久化到 document_states，无需改协作服务器。
+   */
+  private readonly meta: Y.Map<unknown>
+
   // erasableSyntaxOnly：禁用构造参数属性，显式声明
   private readonly ydoc: Y.Doc
 
   constructor(ydoc: Y.Doc) {
     this.ydoc = ydoc
     this.rows = ydoc.getArray<Y.Map<CellValue>>('rows')
+    this.meta = ydoc.getMap('meta')
+  }
+
+  /** 读取嵌套 meta 子表；不存在返回 null（读路径不产生副作用） */
+  private readMetaMap(key: 'colWidths' | 'rowHeights' | 'cfRules'): Y.Map<unknown> | null {
+    const v = this.meta.get(key)
+    return v instanceof Y.Map ? v : null
+  }
+
+  /** 取嵌套 meta 子表，不存在则创建（写路径专用） */
+  private ensureMetaMap(key: 'colWidths' | 'rowHeights' | 'cfRules'): Y.Map<unknown> {
+    const existing = this.meta.get(key)
+    if (existing instanceof Y.Map) return existing
+    const created = new Y.Map<unknown>()
+    this.meta.set(key, created)
+    return created
   }
 
   get rowCount(): number {
@@ -165,10 +211,12 @@ export class SheetModel {
   insertRow(at: number): void {
     const index = Math.min(Math.max(at, 0), this.rows.length)
     this.rows.insert(index, [new Y.Map<CellValue>()])
+    this.shiftRowHeights(index, 1)
   }
 
   deleteRow(at: number): void {
     if (at < 0 || at >= this.rows.length) return
+    this.shiftRowHeights(at, -1)
     if (this.rows.length <= 1) {
       // 至少保留一行：清空该行而非删除
       this.rows.get(0)?.clear()
@@ -179,6 +227,7 @@ export class SheetModel {
 
   insertCol(at: number): void {
     const index = Math.max(at, 0)
+    this.shiftColWidths(index, 1)
     this.rows.forEach((row) => {
       const entries: Array<[number, CellValue]> = []
       row.forEach((v, k) => entries.push([Number(k), v]))
@@ -192,6 +241,7 @@ export class SheetModel {
   }
 
   deleteCol(at: number): void {
+    this.shiftColWidths(at, -1)
     this.rows.forEach((row) => {
       const entries: Array<[number, CellValue]> = []
       row.forEach((v, k) => entries.push([Number(k), v]))
@@ -210,9 +260,175 @@ export class SheetModel {
     this.ydoc.transact(fn)
   }
 
-  /** 深度观察（rows 结构 + 各行内容）；返回清理函数 */
+  /* ---------------------------------------------------------------- */
+  /*  meta：列宽 / 行高 / 条件格式                                      */
+  /* ---------------------------------------------------------------- */
+
+  /** 列宽（px）；未设置返回 null 表示用默认 96 */
+  getColWidth(col: number): number | null {
+    const widths = this.readMetaMap('colWidths')
+    const v = widths?.get(String(col))
+    return typeof v === 'number' ? v : null
+  }
+
+  /** 设置列宽；传 null 恢复默认（键被删除，保持稀疏） */
+  setColWidth(col: number, px: number | null): void {
+    const widths = this.ensureMetaMap('colWidths')
+    const key = String(col)
+    if (px === null) widths.delete(key)
+    else widths.set(key, Math.max(24, Math.round(px)))
+  }
+
+  /** 行高（px）；未设置返回 null 表示用默认 30 */
+  getRowHeight(row: number): number | null {
+    const heights = this.readMetaMap('rowHeights')
+    const v = heights?.get(String(row))
+    return typeof v === 'number' ? v : null
+  }
+
+  /** 设置行高；传 null 恢复默认 */
+  setRowHeight(row: number, px: number | null): void {
+    const heights = this.ensureMetaMap('rowHeights')
+    const key = String(row)
+    if (px === null) heights.delete(key)
+    else heights.set(key, Math.max(16, Math.round(px)))
+  }
+
+  /** 全部列宽（仅非默认项） */
+  getColWidths(): Record<string, number> {
+    const out: Record<string, number> = {}
+    this.readMetaMap('colWidths')?.forEach((v, k) => {
+      if (typeof v === 'number') out[k] = v
+    })
+    return out
+  }
+
+  /** 全部行高（仅非默认项） */
+  getRowHeights(): Record<string, number> {
+    const out: Record<string, number> = {}
+    this.readMetaMap('rowHeights')?.forEach((v, k) => {
+      if (typeof v === 'number') out[k] = v
+    })
+    return out
+  }
+
+  /** 全部条件格式规则 */
+  getCfRules(): Record<string, CfRule> {
+    const out: Record<string, CfRule> = {}
+    this.readMetaMap('cfRules')?.forEach((v, k) => {
+      if (v && typeof v === 'object' && 'op' in (v as object)) out[k] = v as CfRule
+    })
+    return out
+  }
+
+  setCfRule(id: string, rule: CfRule): void {
+    this.ensureMetaMap('cfRules').set(id, rule)
+  }
+
+  removeCfRule(id: string): void {
+    this.readMetaMap('cfRules')?.delete(id)
+  }
+
+  /**
+   * 列位移时平移列宽键。
+   * 与 insertCol/deleteCol 重排行内 key 是同一套语义 —— 列级并发操作
+   * 最后写赢（docs/excel-sheets.md 已标注的已知边界）。
+   */
+  private shiftColWidths(from: number, delta: number): void {
+    const widths = this.readMetaMap('colWidths')
+    if (!widths || widths.size === 0) return
+
+    const entries: Array<[string, unknown]> = []
+    widths.forEach((v, k) => entries.push([k, v]))
+
+    if (delta > 0) {
+      // 插入：col >= from 都要 +1，从大到小改避免键互相覆盖
+      entries.sort((a, b) => Number(b[0]) - Number(a[0]))
+      for (const [k, v] of entries) {
+        const col = Number(k)
+        if (Number.isFinite(col) && col >= from) {
+          widths.delete(k)
+          widths.set(String(col + 1), v)
+        }
+      }
+    } else {
+      // 删除：from 键直接丢，col > from 的整体 -1
+      widths.delete(String(from))
+      entries.sort((a, b) => Number(a[0]) - Number(b[0]))
+      for (const [k, v] of entries) {
+        const col = Number(k)
+        if (Number.isFinite(col) && col > from) widths.set(String(col - 1), v)
+      }
+    }
+  }
+
+  /** 行位移时平移行高键（Y.Array 只平移行对象，索引键不会自己跟） */
+  private shiftRowHeights(from: number, delta: number): void {
+    const heights = this.readMetaMap('rowHeights')
+    if (!heights || heights.size === 0) return
+
+    const entries: Array<[string, unknown]> = []
+    heights.forEach((v, k) => entries.push([k, v]))
+
+    if (delta > 0) {
+      entries.sort((a, b) => Number(b[0]) - Number(a[0]))
+      for (const [k, v] of entries) {
+        const row = Number(k)
+        if (Number.isFinite(row) && row >= from) {
+          heights.delete(k)
+          heights.set(String(row + 1), v)
+        }
+      }
+    } else {
+      heights.delete(String(from))
+      entries.sort((a, b) => Number(a[0]) - Number(b[0]))
+      for (const [k, v] of entries) {
+        const row = Number(k)
+        if (Number.isFinite(row) && row > from) heights.set(String(row - 1), v)
+      }
+    }
+  }
+
+  /** 快照 meta 段（尺寸 + 条件格式） */
+  getMetaSnapshot(): SheetMeta {
+    const meta: SheetMeta = {}
+    const widths = this.getColWidths()
+    const heights = this.getRowHeights()
+    const rules = this.getCfRules()
+    if (Object.keys(widths).length > 0) meta.colWidths = widths
+    if (Object.keys(heights).length > 0) meta.rowHeights = heights
+    if (Object.keys(rules).length > 0) meta.cfRules = rules
+    return meta
+  }
+
+  /** 恢复 meta 段；缺省的字段保持现状（兼容没有 meta 的旧快照） */
+  applyMetaSnapshot(meta: SheetMeta | null | undefined): void {
+    if (!meta) return
+    this.transact(() => {
+      if (meta.colWidths) {
+        const m = this.ensureMetaMap('colWidths')
+        m.forEach((_v, k) => m.delete(k))
+        for (const [k, v] of Object.entries(meta.colWidths)) m.set(k, v)
+      }
+      if (meta.rowHeights) {
+        const m = this.ensureMetaMap('rowHeights')
+        m.forEach((_v, k) => m.delete(k))
+        for (const [k, v] of Object.entries(meta.rowHeights)) m.set(k, v)
+      }
+      if (meta.cfRules) {
+        const m = this.ensureMetaMap('cfRules')
+        m.forEach((_v, k) => m.delete(k))
+        for (const [k, v] of Object.entries(meta.cfRules)) m.set(k, v)
+      }
+    })
+  }
+
+  /** 已挂观察器的 meta 子表（避免重复 observe） */
+  private readonly observedMetaMaps = new WeakSet<Y.Map<unknown>>()
+
+  /** 深度观察（rows 结构 + 各行内容 + meta 及其子表）；返回清理函数 */
   observe(callback: () => void): () => void {
-    const attach = () => {
+    const attachRows = () => {
       this.rows.forEach((row) => {
         if (!this.observedRows.has(row)) {
           this.observedRows.add(row)
@@ -221,17 +437,42 @@ export class SheetModel {
       })
     }
 
+    /**
+     * Yjs 的 observe 是浅层的：meta.set(key, childMap) 会冒泡到 meta，
+     * 但 childMap 内部的 set/delete **不会**。而列宽/行高/条件格式的读写
+     * 全发生在子表里，不挂上子表就会「模型已改、界面不动」
+     * （表现为 resetRowHeight 后 DOM 仍是旧行高）。
+     */
+    const attachMeta = () => {
+      this.meta.forEach((value) => {
+        if (value instanceof Y.Map && !this.observedMetaMaps.has(value)) {
+          this.observedMetaMaps.add(value)
+          value.observe(callback)
+        }
+      })
+    }
+
     const onArray = () => {
-      attach()
+      attachRows()
+      callback()
+    }
+
+    const onMeta = () => {
+      attachMeta() // 新建的子表（首次 setColWidth/setRowHeight/setCfRule）要补挂
       callback()
     }
 
     this.rows.observe(onArray)
-    attach()
+    this.meta.observe(onMeta)
+    attachRows()
+    attachMeta()
     callback()
 
     return () => {
       this.rows.unobserve(onArray)
+      this.meta.unobserve(onMeta)
+      // 已挂的子表无法逐个拿到引用，统一靠 WeakSet 去重；
+      // 组件销毁后这些监听随 ydoc 一起丢弃，无需显式卸载
     }
   }
 

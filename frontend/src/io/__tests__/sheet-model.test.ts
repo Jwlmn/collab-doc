@@ -176,3 +176,148 @@ describe('SheetModel 行模型', () => {
     expect(colLabelToIndex('AB')).toBe(27)
   })
 })
+
+/* ------------------------------------------------------------------ */
+/*  C4：meta（列宽 / 行高 / 条件格式）                                   */
+/* ------------------------------------------------------------------ */
+
+describe('SheetModel meta', () => {
+  it('列宽与行高：未设置返回 null，设置后可读，null 恢复默认', () => {
+    const { model } = createModel()
+    expect(model.getColWidth(0)).toBeNull()
+    expect(model.getRowHeight(0)).toBeNull()
+
+    model.setColWidth(0, 150)
+    model.setRowHeight(2, 60)
+    expect(model.getColWidth(0)).toBe(150)
+    expect(model.getRowHeight(2)).toBe(60)
+
+    model.setColWidth(0, null)
+    model.setRowHeight(2, null)
+    expect(model.getColWidth(0)).toBeNull()
+    expect(model.getRowHeight(2)).toBeNull()
+  })
+
+  it('尺寸下限保护', () => {
+    const { model } = createModel()
+    model.setColWidth(0, 1)
+    model.setRowHeight(0, 1)
+    expect(model.getColWidth(0)).toBe(24)
+    expect(model.getRowHeight(0)).toBe(16)
+  })
+
+  it('insertCol 平移列宽（from 起整体右移）', () => {
+    const { model } = createModel()
+    model.setColWidth(0, 100)
+    model.setColWidth(3, 400)
+
+    model.insertCol(0) // 0→1, 3→4
+    expect(model.getColWidth(0)).toBeNull()
+    expect(model.getColWidth(1)).toBe(100)
+    expect(model.getColWidth(4)).toBe(400)
+  })
+
+  it('deleteCol 丢弃被删列并左移其余', () => {
+    const { model } = createModel()
+    model.setColWidth(1, 200)
+    model.setColWidth(4, 500)
+
+    model.deleteCol(1)
+    expect(model.getColWidth(1)).toBeNull()
+    expect(model.getColWidth(3)).toBe(500) // 4 → 3
+  })
+
+  it('insertRow / deleteRow 平移行高', () => {
+    const { model } = createModel()
+    model.seedRows(5)
+    model.setRowHeight(0, 40)
+    model.setRowHeight(4, 80)
+
+    model.insertRow(0)
+    expect(model.getRowHeight(0)).toBeNull()
+    expect(model.getRowHeight(1)).toBe(40)
+    expect(model.getRowHeight(5)).toBe(80)
+
+    model.deleteRow(0)
+    expect(model.getRowHeight(0)).toBe(40)
+    expect(model.getRowHeight(4)).toBe(80)
+  })
+
+  it('条件格式规则 CRUD', () => {
+    const { model } = createModel()
+    expect(model.getCfRules()).toEqual({})
+
+    model.setCfRule('r1', {
+      r1: 0, c1: 0, r2: 9, c2: 0,
+      op: 'gt', value: 60,
+      style: { bg: '#e8f7ee' },
+    })
+    expect(Object.keys(model.getCfRules())).toEqual(['r1'])
+    expect(model.getCfRules().r1.op).toBe('gt')
+
+    model.removeCfRule('r1')
+    expect(model.getCfRules()).toEqual({})
+  })
+
+  it('meta 快照往返（getMetaSnapshot → applyMetaSnapshot）', () => {
+    const { model } = createModel()
+    model.setColWidth(2, 220)
+    model.setRowHeight(1, 55)
+    model.setCfRule('k', { r1: 0, c1: 0, r2: 2, c2: 2, op: 'lt', value: 0, style: { c: '#d03050' } })
+
+    const snap = model.getMetaSnapshot()
+    expect(snap.colWidths).toEqual({ '2': 220 })
+    expect(snap.rowHeights).toEqual({ '1': 55 })
+    expect(snap.cfRules?.k.op).toBe('lt')
+
+    // 换一个模型恢复
+    const { model: fresh } = createModel()
+    fresh.applyMetaSnapshot(snap)
+    expect(fresh.getColWidth(2)).toBe(220)
+    expect(fresh.getRowHeight(1)).toBe(55)
+    expect(fresh.getCfRules().k.value).toBe(0)
+  })
+
+  it('applyMetaSnapshot(null) 不动现状（兼容旧快照）', () => {
+    const { model } = createModel()
+    model.setColWidth(0, 120)
+    model.applyMetaSnapshot(null)
+    model.applyMetaSnapshot({})
+    expect(model.getColWidth(0)).toBe(120)
+  })
+
+  it('applyMetaSnapshot 覆盖已存在的 meta', () => {
+    const { model } = createModel()
+    model.setColWidth(0, 120)
+    model.setColWidth(5, 999)
+    model.applyMetaSnapshot({ colWidths: { '0': 300 } })
+    expect(model.getColWidth(0)).toBe(300)
+    expect(model.getColWidth(5)).toBeNull() // 不在快照里的键被清掉
+  })
+
+  it('observe 会被 meta 变更触发', () => {
+    const { model } = createModel()
+    let calls = 0
+    const stop = model.observe(() => {
+      calls++
+    })
+    const before = calls
+    model.setColWidth(0, 100)
+    expect(calls).toBeGreaterThan(before)
+    stop()
+  })
+
+  it('meta 变更经 Y.Doc 传输后可在另一端读到', () => {
+    const { ydoc, model } = createModel()
+    model.setColWidth(1, 180)
+    model.setCfRule('x', { r1: 0, c1: 0, r2: 1, c2: 1, op: 'gt', value: 5, style: {} })
+
+    const update = Y.encodeStateAsUpdate(ydoc)
+    const peer = new Y.Doc()
+    Y.applyUpdate(peer, update)
+    const peerModel = new SheetModel(peer)
+
+    expect(peerModel.getColWidth(1)).toBe(180)
+    expect(peerModel.getCfRules().x.op).toBe('gt')
+  })
+})

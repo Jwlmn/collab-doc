@@ -324,7 +324,7 @@ const emptyStateDescription = computed(() => {
         size="small"
         aria-label="排序方式"
         class="ctl-sort"
-      />
+       name="sort-by" id="sort-by" />
       <n-button-group size="small" aria-label="视图切换" class="ctl-view">
         <n-button
           :type="viewMode === 'list' ? 'primary' : 'default'"
@@ -357,7 +357,7 @@ const emptyStateDescription = computed(() => {
         <n-button quaternary class="ctl-trash" @click="router.push('/trash')">回收站</n-button>
       </template>
       <n-dropdown v-else :options="moreMenuOptions" @select="handleMoreMenu">
-        <n-button quaternary aria-label="更多操作" class="ctl-more">⋯</n-button>
+        <n-button quaternary aria-label="⋯（更多操作）" class="ctl-more">⋯</n-button>
       </n-dropdown>
       <input
         ref="fileInputRef"
@@ -444,7 +444,7 @@ const emptyStateDescription = computed(() => {
                 :options="ownerMenuOptions(doc)"
                 @select="(key: string) => handleOwnerMenu(key, doc)"
               >
-                <n-button size="tiny" quaternary aria-label="更多操作">⋯</n-button>
+                <n-button size="tiny" quaternary aria-label="⋯（更多操作）">⋯</n-button>
               </n-dropdown>
             </n-space>
           </template>
@@ -575,7 +575,7 @@ const emptyStateDescription = computed(() => {
                 :options="ownerMenuOptions(doc)"
                 @select="(key: string) => handleOwnerMenu(key, doc)"
               >
-                <n-button size="small" quaternary aria-label="更多操作">⋯</n-button>
+                <n-button size="small" quaternary aria-label="⋯（更多操作）">⋯</n-button>
               </n-dropdown>
             </n-space>
           </template>
@@ -623,7 +623,7 @@ const emptyStateDescription = computed(() => {
       :loading="renaming"
       @positive-click="handleRename"
     >
-      <n-input v-model:value="renameTarget.title" placeholder="文档标题" aria-label="文档标题" @keyup.enter="handleRename" />
+      <n-input v-model:value="renameTarget.title" placeholder="文档标题" aria-label="文档标题" @keyup.enter="handleRename"  name="document-title" id="document-title" />
     </n-modal>
 
     <ShareModal v-model:show="shareVisible" :document-id="shareDocumentId" />

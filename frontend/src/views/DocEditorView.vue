@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, shallowRef, nextTick, watch 
 import { useRoute, useRouter } from 'vue-router'
 import { useMessage } from 'naive-ui'
 import { Editor, EditorContent } from '@tiptap/vue-3'
+import { relativePositionToAbsolutePosition } from '@tiptap/y-tiptap'
 import Collaboration from '@tiptap/extension-collaboration'
 import CollaborationCaret from '@tiptap/extension-collaboration-caret'
 import { BubbleMenu } from '@tiptap/extension-bubble-menu'
@@ -144,6 +145,17 @@ const statusType = computed(() =>
 )
 
 /** 稳定的用户颜色（按名字哈希，公共实现见 utils/color） */
+/**
+ * 头像堆的可访问名称。
+ * Lighthouse 的 label-content-name-mismatch 要求「可见文本 ⊆ 可访问名称」，
+ * 而堆里的头像首字与 +N 是动态的，只能同样动态地拼进去。
+ */
+const avatarStackLabel = computed(() => {
+  const heads = collaborators.value.slice(0, 4).map((p) => p.name.slice(0, 1)).join('')
+  const extra = collaborators.value.length > 4 ? `+${collaborators.value.length - 4}` : ''
+  return `在线协作者 ${heads}${extra}`
+})
+
 const userColor = computed(() => colorOf(auth.user?.name))
 
 function refreshCollaborators(): void {
@@ -256,8 +268,76 @@ function jumpToFind(attempt = 0): void {
   void router.replace({ query: rest })
 }
 
+/* ---------------- 跟随协作者 ---------------- */
+
+/** 正在跟随的协作者名字；null = 未跟随 */
+const followName = ref<string | null>(null)
+
+function toggleFollow(name: string): void {
+  followName.value = followName.value === name ? null : name
+  if (followName.value) {
+    message.info(`正在跟随 ${name}（Esc 退出）`)
+    applyFollow()
+  }
+}
+
+/**
+ * 把视口滚到目标协作者的光标处。
+ *
+ * awareness 里的 cursor 是 y-prosemirror 的**相对位置**（随文档演进仍有效），
+ * 要经 y-sync 的 binding 映射转成 ProseMirror 绝对位置才能取坐标。
+ * 相对位置在对端本地编辑后可能暂时解析不出来 —— 静默跳过，下一次
+ * awareness 变化会重试。
+ */
+function applyFollow(): void {
+  const target = followName.value
+  const awareness = provider?.awareness
+  const ed = editor.value
+  if (!target || !awareness || !ed) return
+
+  awareness.getStates().forEach((state, clientId) => {
+    if (clientId === awareness.clientID) return
+    const typed = state as {
+      user?: Collaborator
+      cursor?: { anchor?: unknown }
+    }
+    if (typed.user?.name !== target || !typed.cursor?.anchor) return
+
+    try {
+      // ProseMirror 的 Plugin 类型未声明 key（运行时一定有）
+      const syncPlugin = ed.state.plugins.find((plugin) =>
+        String((plugin as { key?: string }).key).startsWith('y-sync'),
+      )
+      const ys = syncPlugin?.getState(ed.state) as
+        | { doc: unknown; type: unknown; binding: { mapping: unknown } }
+        | undefined
+      if (!ys?.doc || !ys.type || !ys.binding?.mapping) return
+
+      const absolute = relativePositionToAbsolutePosition(
+        ys.doc as never,
+        ys.type as never,
+        typed.cursor.anchor as never,
+        ys.binding.mapping as never,
+      )
+      if (absolute === null || absolute === undefined) return
+
+      const coords = ed.view.coordsAtPos(absolute)
+      if (!Number.isFinite(coords.top)) return
+      window.scrollBy({ top: coords.top - window.innerHeight / 2, behavior: 'smooth' })
+    } catch {
+      // 相对位置失效（对端正在改文档）：静默，等下一次 awareness 变化
+    }
+  })
+}
+
 /** 快捷键：⌘/Ctrl+Enter 开评论抽屉；? 开快捷键说明 */
 function handleKeydown(event: KeyboardEvent): void {
+  // 跟随态：Esc 优先退出（不 preventDefault，Naive 弹层仍照常关闭）
+  if (event.key === 'Escape' && followName.value) {
+    followName.value = null
+    return
+  }
+
   const target = event.target as HTMLElement | null
   const typing =
     !!target &&
@@ -431,6 +511,7 @@ onMounted(async () => {
 
   provider.awareness?.on('change', () => {
     refreshCollaborators()
+    applyFollow()
   })
   refreshCollaborators()
 
@@ -545,9 +626,10 @@ async function handleRename() {
 
 <template>
   <div class="editor-page">
+    <a href="#main" class="skip-link">跳到正文</a>
     <div class="editor-topbar">
       <n-space align="center" size="large">
-        <n-button quaternary aria-label="返回文档列表" @click="router.push('/')">← 返回列表</n-button>
+        <n-button quaternary aria-label="← 返回列表（返回文档列表）" @click="router.push('/')">← 返回列表</n-button>
         <n-input
           ref="titleInputRef"
           v-model:value="titleEditing"
@@ -557,11 +639,11 @@ async function handleRename() {
           :aria-label="canRename ? '编辑文档标题' : '文档标题（仅所有者可改）'"
           @blur="handleRename"
           @keyup.enter="($event.target as HTMLInputElement).blur()"
-        />
+         name="document-title" id="document-title" />
         <n-tag v-if="isReadonly" size="small" type="warning" round>🔒 只读</n-tag>
       </n-space>
       <n-space align="center" size="small" :wrap="true">
-        <n-button quaternary size="small" aria-label="快捷键说明" @click="helpVisible = true">?</n-button>
+        <n-button quaternary size="small" aria-label="?（快捷键说明）" @click="helpVisible = true">?</n-button>
         <n-button v-if="canRename" quaternary size="small" @click="shareVisible = true">共享</n-button>
         <n-dropdown :options="exportOptions" :disabled="exporting" @select="handleExport">
           <n-button quaternary size="small" :loading="exporting" aria-label="导出">
@@ -580,7 +662,7 @@ async function handleRename() {
               class="avatar-stack"
               role="button"
               tabindex="0"
-              aria-label="在线协作者"
+              :aria-label="avatarStackLabel"
               @keydown.enter.prevent="($event.currentTarget as HTMLElement).click()"
               @keydown.space.prevent="($event.currentTarget as HTMLElement).click()"
             >
@@ -607,12 +689,40 @@ async function handleRename() {
           </template>
           <n-space vertical size="small">
             <n-text depth="3" style="font-size: 12px">在线协作者（{{ collaborators.length }}）</n-text>
-            <n-space v-for="person in collaborators" :key="person.name" align="center" size="small">
-              <n-avatar round :size="22" :color="person.color">{{ person.name.slice(0, 1) }}</n-avatar>
-              <n-text>{{ person.name }}</n-text>
+            <n-space
+              v-for="person in collaborators"
+              :key="person.name"
+              align="center"
+              size="small"
+              justify="space-between"
+              style="width: 100%"
+            >
+              <n-space align="center" size="small">
+                <n-avatar round :size="22" :color="person.color">{{ person.name.slice(0, 1) }}</n-avatar>
+                <n-text>{{ person.name }}</n-text>
+              </n-space>
+              <n-button
+                size="tiny"
+                quaternary
+                :type="followName === person.name ? 'primary' : 'default'"
+                @click="toggleFollow(person.name)"
+              >
+                {{ followName === person.name ? '跟随中' : '跟随' }}
+              </n-button>
             </n-space>
           </n-space>
         </n-popover>
+
+        <n-tag
+          v-if="followName"
+          size="small"
+          type="info"
+          round
+          closable
+          @close="followName = null"
+        >
+          跟随 {{ followName }} · Esc 退出
+        </n-tag>
 
         <span role="status" aria-live="polite" class="sync-status">
           <n-tag v-if="connectionStatus !== 'connected'" :type="statusType" size="small" round>
@@ -643,7 +753,7 @@ async function handleRename() {
             <n-button
               size="tiny"
               quaternary
-              aria-label="加粗"
+              aria-label="加粗 B"
               :type="isActive('bold') ? 'primary' : 'default'"
               :disabled="isReadonly"
               @click="editor?.chain().focus().toggleBold().run()"
@@ -700,7 +810,9 @@ async function handleRename() {
         </n-tooltip>
       </div>
 
-      <EditorContent v-if="editor" :editor="editor" />
+      <div id="main" class="editor-main" role="main" tabindex="-1">
+        <EditorContent v-if="editor" :editor="editor" />
+      </div>
     </div>
 
     <VersionDrawer
@@ -734,7 +846,7 @@ async function handleRename() {
         placeholder="https://"
         aria-label="链接地址"
         @keyup.enter="confirmLink"
-      />
+       name="link-url" id="link-url" />
     </n-modal>
 
     <n-modal v-model:show="helpVisible" preset="card" title="快捷键" style="width: 440px; max-width: 92vw">

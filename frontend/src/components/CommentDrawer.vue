@@ -298,7 +298,7 @@ async function handleDelete(comment: Comment): Promise<void> {
             @keydown="handleMentionKeydown"
             @keyup.enter.ctrl="handleSubmit"
             @keyup.enter.meta="handleSubmit"
-          />
+           name="comment-content" id="comment-content" />
           <n-text depth="3" style="display: block; margin-top: 4px; font-size: 12px">
             Ctrl / ⌘ + Enter 发送
           </n-text>

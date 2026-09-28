@@ -5,7 +5,7 @@ import { api, getApiErrorMessage } from '../utils/request'
 import { formatTime } from '../utils/format'
 import { useIsMobile } from '../composables/useIsMobile'
 import { gridToHtml } from '../io/sheet-model'
-import type { SheetCell } from '../io/sheet-model'
+import type { SheetCell, SheetMeta } from '../io/sheet-model'
 import {
   describeGridDiff,
   diffGrids,
@@ -16,6 +16,8 @@ import type { DocumentVersion } from '../types'
 /** Excel 文档的版本快照载荷 */
 interface SheetSnapshot {
   grid: SheetCell[][]
+  /** 尺寸与条件格式；旧快照没有此字段，恢复时保持现状 */
+  meta?: SheetMeta
 }
 
 const props = defineProps<{
@@ -24,8 +26,8 @@ const props = defineProps<{
   readonly?: boolean
   /** 取当前网格快照（保存时调用） */
   capture: () => SheetSnapshot | null
-  /** 恢复快照（写回协同模型） */
-  restore: (grid: SheetCell[][]) => void
+  /** 恢复快照（写回协同模型）；meta 缺省时保持现有尺寸与条件格式 */
+  restore: (grid: SheetCell[][], meta?: SheetMeta) => void
 }>()
 
 const emit = defineEmits<{
@@ -160,7 +162,7 @@ async function restoreVersion(version: DocumentVersion): Promise<void> {
       return
     }
     await backupBeforeRestore()
-    props.restore(payload.grid)
+    props.restore(payload.grid, payload.meta)
     emit('update:show', false)
     message.success(`已恢复到「${snapshot.name ?? formatTime(snapshot.created_at)}」`)
   } catch (error) {
@@ -208,7 +210,7 @@ async function handleDelete(version: DocumentVersion): Promise<void> {
           placeholder="版本名称（可选，如：月初快照）"
           maxlength="200"
           @keyup.enter="handleSave"
-        />
+         name="version-name" id="version-name" />
         <n-button
           type="primary"
           block

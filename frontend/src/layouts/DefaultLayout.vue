@@ -32,6 +32,7 @@ function handleUserMenu(key: string) {
 
 <template>
   <n-layout class="app-layout">
+    <a href="#main" class="skip-link">跳到主内容</a>
     <n-layout-header bordered class="layout-header">
       <router-link to="/" class="brand">多人实时协作文档</router-link>
       <n-space align="center">
@@ -49,7 +50,8 @@ function handleUserMenu(key: string) {
         </template>
       </n-space>
     </n-layout-header>
-    <n-layout-content class="layout-content">
+    <!-- role=main：n-layout-content 渲染成 div，不自动成为 main landmark -->
+    <n-layout-content id="main" class="layout-content" tabindex="-1" role="main">
       <router-view />
     </n-layout-content>
   </n-layout>

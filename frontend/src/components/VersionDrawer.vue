@@ -204,7 +204,7 @@ async function handleDelete(version: DocumentVersion): Promise<void> {
           placeholder="版本名称（可选，如：初稿）"
           maxlength="200"
           @keyup.enter="handleSave"
-        />
+         name="version-name" id="version-name" />
         <n-button
           type="primary"
           block

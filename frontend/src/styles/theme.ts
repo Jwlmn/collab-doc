@@ -19,7 +19,9 @@ export const themeOverrides: GlobalThemeOverrides = {
     textColorBase: '#1f2329',
     textColor1: '#1f2329',
     textColor2: '#4e5969',
-    textColor3: '#86909c',
+    // #86909c 在白底上只有 3.23:1，12px 文本达不到 WCAG AA 的 4.5:1，
+    // 加深到 #6a707a（约 4.9:1），仍明显浅于 textColor2 以保住层级
+    textColor3: '#6a707a',
     placeholderColor: '#a9aeb8',
     bodyColor: '#f7f8fa',
     borderColor: '#e5e6eb',

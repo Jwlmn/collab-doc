@@ -10,7 +10,16 @@ import { getCollabUrl } from '../utils/collab'
 import { userColor as colorOf } from '../utils/color'
 import { useImportFlowStore } from '../stores/importFlow'
 import { exportGridToXlsx, columnLabel } from '../io/cells'
-import { SheetModel, columnLabels, gridToHtml, DEFAULT_COLS, type CellStyle } from '../io/sheet-model'
+import {
+  SheetModel,
+  columnLabels,
+  gridToHtml,
+  DEFAULT_COLS,
+  type CellStyle,
+  type CfOp,
+  type CfRule,
+  type SheetMeta,
+} from '../io/sheet-model'
 import { useAutoSnapshot } from '../composables/useAutoSnapshot'
 import { evaluateCellDisplay, isFormula } from '../io/formula'
 import CommentDrawer from '../components/CommentDrawer.vue'
@@ -108,12 +117,46 @@ const CELL_H = 30
 const CELL_W = 96
 const CORNER_W = 48
 
+/**
+ * 视口覆盖行列数。
+ *
+ * 行高列宽可变后不能再用「视口尺寸 ÷ 常量」的除法（会被放大的行高/列宽
+ * 算漏，露出没有网格线的空白区），改为逐格累加到覆盖视口为止。
+ */
 function refreshCover(): void {
   const el = gridWrapRef.value
   if (!el) return
-  // +1 吸收 sticky 表头占位与亚像素取整误差
-  coverRows.value = Math.ceil(el.clientHeight / CELL_H) + 1
-  coverCols.value = Math.ceil(Math.max(el.clientWidth - CORNER_W, 0) / CELL_W) + 1
+
+  // 硬上限：行高下限 16px、列宽下限 24px，视口累加不会真的到这个量级，
+  // 纯粹防极端配置下死循环
+  const GUARD = 2000
+
+  let height = 0
+  let rows = 0
+  while (height < el.clientHeight && rows < GUARD) {
+    height += rowHeightOf(rows)
+    rows++
+  }
+  coverRows.value = rows + 1 // +1 吸收 sticky 表头占位与亚像素取整误差
+
+  const viewportW = Math.max(el.clientWidth - CORNER_W, 0)
+  let width = 0
+  let cols = 0
+  while (width < viewportW && cols < GUARD) {
+    width += colWidthOf(cols)
+    cols++
+  }
+  coverCols.value = cols + 1
+}
+
+/** 数据变更后按帧节流刷新覆盖数（每帧最多一次，避免拖拽期间高频重算） */
+let coverRafId = 0
+function scheduleRefreshCover(): void {
+  if (coverRafId) return
+  coverRafId = requestAnimationFrame(() => {
+    coverRafId = 0
+    refreshCover()
+  })
 }
 
 watch(gridWrapRef, (el) => {
@@ -137,6 +180,85 @@ const displayCols = computed(() => {
 })
 
 const columnHeaders = computed(() => columnLabels(displayCols.value))
+
+/* ---------------- 尺寸（列宽 / 行高）与拖拽 ---------------- */
+
+/** 拖拽预览值：拖动过程中只改本地显示，松手才写 Y.Map（否则每像素都广播一次） */
+const resizePreview = ref<{ kind: 'col' | 'row'; index: number; px: number } | null>(null)
+
+/** 当前列宽：预览值 → 模型值 → 默认 96 */
+function colWidthOf(c: number): number {
+  const preview = resizePreview.value
+  if (preview?.kind === 'col' && preview.index === c) return preview.px
+  void dataRevision.value
+  return model?.getColWidth(c) ?? CELL_W
+}
+
+/** 当前行高：预览值 → 模型值 → 默认 30 */
+function rowHeightOf(r: number): number {
+  const preview = resizePreview.value
+  if (preview?.kind === 'row' && preview.index === r) return preview.px
+  void dataRevision.value
+  return model?.getRowHeight(r) ?? CELL_H
+}
+
+let resizeOrigin = 0
+let resizeStart = 0
+
+function startColResize(c: number, event: MouseEvent): void {
+  if (isReadonly.value || event.button !== 0) return
+  event.preventDefault()
+  event.stopPropagation()
+  resizeStart = event.clientX
+  resizeOrigin = colWidthOf(c)
+  resizePreview.value = { kind: 'col', index: c, px: resizeOrigin }
+  dragging.value = false
+}
+
+function startRowResize(r: number, event: MouseEvent): void {
+  if (isReadonly.value || event.button !== 0) return
+  event.preventDefault()
+  event.stopPropagation()
+  resizeStart = event.clientY
+  resizeOrigin = rowHeightOf(r)
+  resizePreview.value = { kind: 'row', index: r, px: resizeOrigin }
+  dragging.value = false
+}
+
+function handleResizeMove(event: MouseEvent): void {
+  const target = resizePreview.value
+  if (!target) return
+  const delta = (target.kind === 'col' ? event.clientX : event.clientY) - resizeStart
+  const min = target.kind === 'col' ? 24 : 16
+  resizePreview.value = { ...target, px: Math.max(min, resizeOrigin + delta) }
+}
+
+/** 松手：把预览值落到模型（一次性写入，协同只广播一次） */
+function handleResizeEnd(): void {
+  const target = resizePreview.value
+  if (!target || !model) {
+    resizePreview.value = null
+    return
+  }
+  const px = target.px
+  if (target.kind === 'col') model.setColWidth(target.index, px)
+  else model.setRowHeight(target.index, px)
+  resizePreview.value = null
+  scheduleRefreshCover()
+}
+
+/** 双击表头边界恢复默认尺寸 */
+function resetColWidth(c: number): void {
+  if (isReadonly.value || !model) return
+  model.setColWidth(c, null)
+  scheduleRefreshCover()
+}
+
+function resetRowHeight(r: number): void {
+  if (isReadonly.value || !model) return
+  model.setRowHeight(r, null)
+  scheduleRefreshCover()
+}
 
 /** 选区：anchor 固定，focus 随点击/拖拽/键盘移动 */
 const anchor = ref({ r: 0, c: 0 })
@@ -168,11 +290,39 @@ function cellStyle(r: number, c: number): CellStyle {
   return model?.getStyle(r, c) ?? {}
 }
 
+/**
+ * 公式求值缓存。
+ *
+ * 网格无虚拟化，每次 dataRevision 变更都会重渲染全部单元格；条件格式又在
+ * 每格上再取一次显示值，不缓存的话公式链会被反复求值。缓存随 dataRevision
+ * 整体失效 —— 数据一变，依赖它的公式都可能变，不做更细粒度的依赖分析。
+ */
+let evalCache = new Map<string, string>()
+let cachedRevision = -1
+
+function evalCacheKey(r: number, c: number): string {
+  return `${r},${c}`
+}
+
 /** 显示值：公式求值 / 原文 */
 function displayValue(r: number, c: number): string {
+  void dataRevision.value
+
   const raw = cellRaw(r, c)
   if (!isFormula(raw)) return raw
-  return evaluateCellDisplay(raw, (rr, cc) => cellRaw(rr, cc), r, c)
+
+  if (cachedRevision !== dataRevision.value) {
+    evalCache.clear()
+    cachedRevision = dataRevision.value
+  }
+
+  const key = evalCacheKey(r, c)
+  const hit = evalCache.get(key)
+  if (hit !== undefined) return hit
+
+  const out = evaluateCellDisplay(raw, (rr, cc) => cellRaw(rr, cc), r, c)
+  evalCache.set(key, out)
+  return out
 }
 
 function isSelected(r: number, c: number): boolean {
@@ -188,14 +338,216 @@ function isEditing(r: number, c: number): boolean {
   return editing.value?.r === r && editing.value?.c === c
 }
 
+/* ---------------- 跟随协作者 ---------------- */
+
+/** 正在跟随的协作者名字；null = 未跟随 */
+const followName = ref<string | null>(null)
+
+function toggleFollow(name: string): void {
+  followName.value = followName.value === name ? null : name
+  if (followName.value) {
+    message.info(`正在跟随 ${name}（Esc 退出）`)
+    applyFollow()
+  }
+}
+
+/** 把视口滚到目标单元格（行列尺寸可变，用实际宽高逐格累加定位） */
+function scrollToCell(r: number, c: number): void {
+  const el = gridWrapRef.value
+  if (!el) return
+
+  let top = 0
+  for (let i = 0; i < r; i++) top += rowHeightOf(i)
+
+  let left = CORNER_W
+  for (let i = 0; i < c; i++) left += colWidthOf(i)
+
+  el.scrollTo({
+    top: Math.max(0, top - el.clientHeight / 2),
+    left: Math.max(0, left - el.clientWidth / 2),
+    behavior: 'smooth',
+  })
+}
+
+/** 按当前跟随目标刷新视口（awareness 变化时调用） */
+function applyFollow(): void {
+  const target = followName.value
+  const awareness = provider?.awareness
+  if (!target || !awareness) return
+
+  awareness.getStates().forEach((state, clientId) => {
+    if (clientId === awareness.clientID) return
+    const typed = state as { user?: Collaborator; cell?: { r: number; c: number } }
+    if (typed.user?.name === target && typed.cell) {
+      scrollToCell(typed.cell.r, typed.cell.c)
+    }
+  })
+}
+
+/* ---------------- 条件格式 ---------------- */
+
+/** 已有规则（随 dataRevision 失效，避免每格都读 Y.Map） */
+const cfRules = computed<Record<string, CfRule>>(() => {
+  void dataRevision.value
+  return model?.getCfRules() ?? {}
+})
+
+/** 文本能否转成数字（条件比较用；空串不算数） */
+function numericOrNull(v: string | number | undefined): number | null {
+  if (v === undefined) return null
+  const text = typeof v === 'number' ? String(v) : v.trim()
+  if (text === '') return null
+  const n = Number(text)
+  return Number.isFinite(n) ? n : null
+}
+
+/** 单元格是否命中某条规则 */
+function cfMatches(rule: CfRule, r: number, c: number): boolean {
+  if (r < rule.r1 || r > rule.r2 || c < rule.c1 || c > rule.c2) return false
+
+  const text = displayValue(r, c)
+
+  switch (rule.op) {
+    case 'contains':
+      return text.includes(String(rule.value))
+    case 'eq':
+    case 'neq': {
+      const a = numericOrNull(text)
+      const b = numericOrNull(rule.value)
+      const equal = a !== null && b !== null ? a === b : text === String(rule.value)
+      return rule.op === 'eq' ? equal : !equal
+    }
+    default: {
+      // 数值比较：非数字单元格一律不命中（如 gt/lt 对文本列无意义）
+      const cell = numericOrNull(text)
+      const bound = numericOrNull(rule.value)
+      if (cell === null || bound === null) return false
+      switch (rule.op) {
+        case 'gt':
+          return cell > bound
+        case 'lt':
+          return cell < bound
+        case 'gte':
+          return cell >= bound
+        case 'lte':
+          return cell <= bound
+        case 'between': {
+          const high = numericOrNull(rule.value2)
+          if (high === null) return false
+          const lo = Math.min(bound, high)
+          const hi = Math.max(bound, high)
+          return cell >= lo && cell <= hi
+        }
+        default:
+          return false
+      }
+    }
+  }
+}
+
+/** 命中的规则样式（多条命中时后定义的优先）；未命中返回 null */
+function cfStyleAt(r: number, c: number): CellStyle | null {
+  const rules = Object.values(cfRules.value)
+  if (rules.length === 0) return null
+  let hit: CellStyle | null = null
+  for (const rule of rules) {
+    if (cfMatches(rule, r, c)) hit = rule.style
+  }
+  return hit
+}
+
 function cellCssStyle(r: number, c: number): Record<string, string> {
   const s = cellStyle(r, c)
-  return {
+  const base = {
     fontWeight: s.b ? '700' : '',
     color: s.c ?? '',
     background: s.bg ?? '',
     textAlign: s.al ?? '',
   }
+
+  // 条件格式只覆盖它自己声明的字段，其余沿用手动样式
+  const cf = cfStyleAt(r, c)
+  if (!cf) return base
+
+  return {
+    fontWeight: cf.b ? '700' : base.fontWeight,
+    color: cf.c ?? base.color,
+    background: cf.bg ?? base.background,
+    textAlign: cf.al ?? base.textAlign,
+  }
+}
+
+/* ---------------- 条件格式 UI ---------------- */
+
+const cfVisible = ref(false)
+const cfOp = ref<CfOp>('gt')
+const cfValue = ref('')
+const cfValue2 = ref('')
+
+const CF_OP_OPTIONS: Array<{ label: string; value: CfOp }> = [
+  { label: '大于', value: 'gt' },
+  { label: '小于', value: 'lt' },
+  { label: '大于等于', value: 'gte' },
+  { label: '小于等于', value: 'lte' },
+  { label: '等于', value: 'eq' },
+  { label: '不等于', value: 'neq' },
+  { label: '包含文本', value: 'contains' },
+  { label: '介于两者之间', value: 'between' },
+]
+
+/** 预设高亮色（条件格式最常用的就是背景高亮） */
+const CF_COLORS = ['#e8f7ee', '#fdeceb', '#fff7e6', '#e7f1ff', '#f3e8ff', '#f4f5f7']
+const cfBg = ref(CF_COLORS[1])
+const cfBold = ref(false)
+
+function applyCfRule(): void {
+  if (!model || isReadonly.value) return
+  const value = cfValue.value.trim()
+  if (value === '') {
+    message.warning('请填写比较值')
+    return
+  }
+  if (cfOp.value === 'between' && cfValue2.value.trim() === '') {
+    message.warning('介于两者之间需要填写第二个值')
+    return
+  }
+
+  const rg = range.value
+  const id = `cf-${Date.now()}-${Math.floor(Math.random() * 1000)}`
+  const style: CellStyle = { bg: cfBg.value }
+  if (cfBold.value) style.b = 1
+
+  model.setCfRule(id, {
+    r1: rg.r1,
+    c1: rg.c1,
+    r2: rg.r2,
+    c2: rg.c2,
+    op: cfOp.value,
+    value: numericOrNull(value) ?? value,
+    ...(cfOp.value === 'between' ? { value2: numericOrNull(cfValue2.value) ?? cfValue2.value } : {}),
+    style,
+  })
+  message.success(`已对 ${columnLabel(rg.c1)}${rg.r1 + 1}:${columnLabel(rg.c2)}${rg.r2 + 1} 应用条件格式`)
+  cfVisible.value = false
+}
+
+function removeCfRule(id: string): void {
+  if (!model || isReadonly.value) return
+  model.removeCfRule(id)
+}
+
+/** 规则区间的人类可读描述 */
+function cfRuleRange(rule: CfRule): string {
+  return rule.r1 === rule.r2 && rule.c1 === rule.c2
+    ? `${columnLabel(rule.c1)}${rule.r1 + 1}`
+    : `${columnLabel(rule.c1)}${rule.r1 + 1}:${columnLabel(rule.c2)}${rule.r2 + 1}`
+}
+
+/** 规则条件的人类可读描述 */
+function cfRuleLabel(rule: CfRule): string {
+  const op = CF_OP_OPTIONS.find((o) => o.value === rule.op)?.label ?? rule.op
+  if (rule.op === 'between') return `${op} ${rule.value} 与 ${rule.value2}`
+  return `${op} ${String(rule.value)}`
 }
 
 function selectCell(r: number, c: number, extend = false): void {
@@ -239,6 +591,7 @@ function handleCellMouseEnter(r: number, c: number): void {
 }
 
 function handleGlobalMouseUp(): void {
+  handleResizeEnd() // 列宽/行高拖拽结算（不依赖选区状态）
   dragging.value = false
   // 触屏点按（未拖动、非 shift）→ 选中并直接进入编辑（移动端无双击语义，且便于 IME）
   // 鼠标单击只选中，进入编辑由双击触发（传统 Excel 行为）
@@ -523,10 +876,27 @@ function refreshPresence(): void {
   remoteCursors.value = cursors
 }
 
+/** 远端光标格的自定义属性：徽标底色取该用户自己的 awareness 颜色 */
+function remoteCursorStyle(r: number, c: number): Record<string, string> {
+  const cursor = remoteCursorAt(r, c)
+  return cursor?.color ? { '--remote-color': cursor.color } : {}
+}
+
 /** 向协同伙伴播报当前焦点格 */
 function broadcastCell(): void {
   provider?.awareness?.setLocalStateField('cell', { r: focus.value.r, c: focus.value.c })
 }
+
+/**
+ * 头像堆的可访问名称。
+ * Lighthouse 的 label-content-name-mismatch 要求「可见文本 ⊆ 可访问名称」，
+ * 而堆里的头像首字与 +N 是动态的，只能同样动态地拼进去。
+ */
+const avatarStackLabel = computed(() => {
+  const heads = collaborators.value.slice(0, 4).map((p) => p.name.slice(0, 1)).join('')
+  const extra = collaborators.value.length > 4 ? `+${collaborators.value.length - 4}` : ''
+  return `在线协作者 ${heads}${extra}`
+})
 
 const userColor = computed(() => colorOf(auth.user?.name))
 
@@ -554,10 +924,11 @@ async function handleRename(): Promise<void> {
 }
 
 /** 版本快照：取当前稠密网格 */
-function captureSnapshot(): { grid: ReturnType<SheetModel['toGrid']> } | null {
+function captureSnapshot(): { grid: ReturnType<SheetModel['toGrid']>; meta?: SheetMeta } | null {
   if (!model) return null
   void dataRevision.value
-  return { grid: model.toGrid() }
+  const meta = model.getMetaSnapshot()
+  return Object.keys(meta).length > 0 ? { grid: model.toGrid(), meta } : { grid: model.toGrid() }
 }
 
 /** 内容停更 60s 后自动存一版（只读时不存） */
@@ -571,11 +942,16 @@ const autoSnapshot = useAutoSnapshot({
   },
 })
 
-/** 版本恢复：整体替换网格（协同广播给所有端） */
-function restoreSnapshot(grid: ReturnType<SheetModel['toGrid']>): void {
+/**
+ * 版本恢复：整体替换网格与 meta（协同广播给所有端）。
+ * meta 缺省（旧快照）时保持现有尺寸与条件格式，避免恢复把界面配置抹平。
+ */
+function restoreSnapshot(grid: ReturnType<SheetModel['toGrid']>, meta?: SheetMeta): void {
   if (!model || isReadonly.value) return
   model.replaceGrid(grid)
+  model.applyMetaSnapshot(meta)
   dataRevision.value++
+  scheduleRefreshCover()
 }
 
 async function handleExport(): Promise<void> {
@@ -594,6 +970,12 @@ async function handleExport(): Promise<void> {
 }
 
 function handleKeydown(event: KeyboardEvent): void {
+  // 跟随态：Esc 优先退出（不 preventDefault，Naive 弹层仍照常关闭）
+  if (event.key === 'Escape' && followName.value) {
+    followName.value = null
+    return
+  }
+
   const target = event.target as HTMLElement | null
   const typing =
     !!target &&
@@ -620,6 +1002,7 @@ function handleKeydown(event: KeyboardEvent): void {
 onMounted(async () => {
   window.addEventListener('keydown', handleKeydown)
   window.addEventListener('mouseup', handleGlobalMouseUp)
+  window.addEventListener('mousemove', handleResizeMove)
   window.addEventListener('pointerdown', handlePointerDown, true)
 
   try {
@@ -729,11 +1112,15 @@ onMounted(async () => {
     name: auth.user?.name ?? (isShare.value ? '访客' : '匿名'),
     color: userColor.value,
   })
-  provider.awareness?.on('change', refreshPresence)
+  provider.awareness?.on('change', () => {
+    refreshPresence()
+    applyFollow()
+  })
   refreshPresence()
 
   stopObserve = model.observe(() => {
     dataRevision.value++
+    scheduleRefreshCover() // 列宽/行高/行列结构变化都会走这里
     autoSnapshot.notifyChange()
   })
 
@@ -821,6 +1208,7 @@ function jumpToFind(): void {
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', handleKeydown)
   window.removeEventListener('mouseup', handleGlobalMouseUp)
+  window.removeEventListener('mousemove', handleResizeMove)
   window.removeEventListener('pointerdown', handlePointerDown, true)
   coverObserver?.disconnect()
   coverObserver = null
@@ -836,9 +1224,10 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="sheet-page">
+    <a href="#main" class="skip-link">跳到表格</a>
     <div class="sheet-topbar">
       <n-space align="center" size="large">
-        <n-button quaternary aria-label="返回文档列表" @click="router.push('/')">← 返回列表</n-button>
+        <n-button quaternary aria-label="← 返回列表（返回文档列表）" @click="router.push('/')">← 返回列表</n-button>
         <n-input
           ref="titleInputRef"
           v-model:value="titleEditing"
@@ -848,12 +1237,12 @@ onBeforeUnmount(() => {
           :aria-label="canRename ? '编辑表格标题' : '表格标题（仅所有者可改）'"
           @blur="handleRename"
           @keyup.enter="($event.target as HTMLInputElement).blur()"
-        />
+         name="sheet-title" id="sheet-title" />
         <n-tag size="small" type="success" round>表格</n-tag>
         <n-tag v-if="isReadonly" size="small" type="warning" round>🔒 只读</n-tag>
       </n-space>
       <n-space align="center" size="small" :wrap="true">
-        <n-button quaternary size="small" aria-label="快捷键说明" @click="helpVisible = true">?</n-button>
+        <n-button quaternary size="small" aria-label="?（快捷键说明）" @click="helpVisible = true">?</n-button>
         <n-button v-if="canRename" quaternary size="small" @click="shareVisible = true">共享</n-button>
         <n-button
           quaternary
@@ -876,7 +1265,7 @@ onBeforeUnmount(() => {
               class="avatar-stack"
               role="button"
               tabindex="0"
-              aria-label="在线协作者"
+              :aria-label="avatarStackLabel"
               @keydown.enter.prevent="($event.currentTarget as HTMLElement).click()"
               @keydown.space.prevent="($event.currentTarget as HTMLElement).click()"
             >
@@ -903,12 +1292,40 @@ onBeforeUnmount(() => {
           </template>
           <n-space vertical size="small">
             <n-text depth="3" style="font-size: 12px">在线协作者（{{ collaborators.length }}）</n-text>
-            <n-space v-for="person in collaborators" :key="person.name" align="center" size="small">
-              <n-avatar round :size="22" :color="person.color">{{ person.name.slice(0, 1) }}</n-avatar>
-              <n-text>{{ person.name }}</n-text>
+            <n-space
+              v-for="person in collaborators"
+              :key="person.name"
+              align="center"
+              size="small"
+              justify="space-between"
+              style="width: 100%"
+            >
+              <n-space align="center" size="small">
+                <n-avatar round :size="22" :color="person.color">{{ person.name.slice(0, 1) }}</n-avatar>
+                <n-text>{{ person.name }}</n-text>
+              </n-space>
+              <n-button
+                size="tiny"
+                quaternary
+                :type="followName === person.name ? 'primary' : 'default'"
+                @click="toggleFollow(person.name)"
+              >
+                {{ followName === person.name ? '跟随中' : '跟随' }}
+              </n-button>
             </n-space>
           </n-space>
         </n-popover>
+
+        <n-tag
+          v-if="followName"
+          size="small"
+          type="info"
+          round
+          closable
+          @close="followName = null"
+        >
+          跟随 {{ followName }} · Esc 退出
+        </n-tag>
 
         <span role="status" aria-live="polite" class="sync-status">
           <n-tag v-if="connectionStatus !== 'connected'" :type="statusType" size="small" round>
@@ -932,7 +1349,7 @@ onBeforeUnmount(() => {
               quaternary
               :type="selectionBold ? 'primary' : 'default'"
               :disabled="isReadonly"
-              aria-label="加粗"
+              aria-label="加粗 B"
               @click="toggleBold"
             >
               <strong>B</strong>
@@ -945,7 +1362,7 @@ onBeforeUnmount(() => {
           :disabled="isReadonly"
           @select="(key: string) => applyStyleToSelection({ c: key })"
         >
-          <n-button size="tiny" quaternary :disabled="isReadonly" aria-label="文字颜色">文字色</n-button>
+          <n-button size="tiny" quaternary :disabled="isReadonly" aria-label="文字色（文字颜色）">文字色</n-button>
         </n-dropdown>
         <n-dropdown
           :options="[
@@ -955,7 +1372,7 @@ onBeforeUnmount(() => {
           :disabled="isReadonly"
           @select="(key: string) => applyStyleToSelection({ bg: key === 'clear' ? null : key })"
         >
-          <n-button size="tiny" quaternary :disabled="isReadonly" aria-label="背景颜色">背景色</n-button>
+          <n-button size="tiny" quaternary :disabled="isReadonly" aria-label="背景色（背景颜色）">背景色</n-button>
         </n-dropdown>
 
         <n-divider vertical />
@@ -966,11 +1383,91 @@ onBeforeUnmount(() => {
 
         <n-divider vertical />
 
+        <n-popover trigger="click" placement="bottom" v-model:show="cfVisible">
+          <template #trigger>
+            <n-button size="tiny" quaternary :disabled="isReadonly" aria-label="条件格式">条件格式</n-button>
+          </template>
+
+          <div class="cf-panel">
+            <div class="cf-row">
+              <n-select
+                v-model:value="cfOp"
+                :options="CF_OP_OPTIONS"
+                size="small"
+                aria-label="比较方式"
+                style="width: 130px"
+               name="cf-op" id="cf-op" />
+              <n-input
+                v-model:value="cfValue"
+                size="small"
+                placeholder="比较值"
+                aria-label="比较值"
+                style="width: 110px"
+                @keyup.enter="applyCfRule"
+               name="cf-value" id="cf-value" />
+              <n-input
+                v-if="cfOp === 'between'"
+                v-model:value="cfValue2"
+                size="small"
+                placeholder="第二个值"
+                aria-label="第二个比较值"
+                style="width: 110px"
+                @keyup.enter="applyCfRule"
+               name="cf-value2" id="cf-value2" />
+            </div>
+
+            <div class="cf-row" style="align-items: center">
+              <span class="cf-label">背景</span>
+              <span
+                v-for="color in CF_COLORS"
+                :key="color"
+                class="cf-swatch"
+                :class="{ active: cfBg === color }"
+                :style="{ background: color }"
+                role="radio"
+                :aria-checked="cfBg === color"
+                :aria-label="`背景色 ${color}`"
+                @click="cfBg = color"
+              />
+              <n-checkbox v-model:checked="cfBold" size="small">加粗</n-checkbox>
+            </div>
+
+            <div class="cf-row">
+              <n-text depth="3" style="font-size: 12px">
+                应用到 {{ columnLabel(range.c1) }}{{ range.r1 + 1 }}:{{ columnLabel(range.c2) }}{{ range.r2 + 1 }}
+              </n-text>
+              <n-button type="primary" size="tiny" @click="applyCfRule">应用</n-button>
+            </div>
+
+            <template v-if="Object.keys(cfRules).length > 0">
+              <n-divider style="margin: 8px 0" />
+              <div class="cf-list">
+                <div v-for="(rule, id) in cfRules" :key="id" class="cf-item">
+                  <span class="cf-swatch" :style="{ background: rule.style.bg ?? '#fff' }" />
+                  <n-text style="font-size: 12px; flex: 1; min-width: 0">
+                    {{ cfRuleRange(rule) }} {{ cfRuleLabel(rule) }}
+                  </n-text>
+                  <n-button
+                    size="tiny"
+                    quaternary
+                    type="error"
+                    :disabled="isReadonly"
+                    aria-label="删除该规则"
+                    @click="removeCfRule(String(id))"
+                  >
+                    删除
+                  </n-button>
+                </div>
+              </div>
+            </template>
+          </div>
+        </n-popover>
+
         <n-dropdown :options="rowMenuOptions" :disabled="isReadonly" @select="handleRowMenu">
-          <n-button size="tiny" quaternary :disabled="isReadonly" aria-label="行操作">行 ▾</n-button>
+          <n-button size="tiny" quaternary :disabled="isReadonly" aria-label="行 ▾（行操作）">行 ▾</n-button>
         </n-dropdown>
         <n-dropdown :options="colMenuOptions" :disabled="isReadonly" @select="handleColMenu">
-          <n-button size="tiny" quaternary :disabled="isReadonly" aria-label="列操作">列 ▾</n-button>
+          <n-button size="tiny" quaternary :disabled="isReadonly" aria-label="列 ▾（列操作）">列 ▾</n-button>
         </n-dropdown>
 
         <n-divider vertical />
@@ -991,47 +1488,94 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <div v-else class="sheet-surface">
+    <!-- sheet-surface 承担 main landmark（本页无可跳过的全局导航） -->
+    <div v-else id="main" class="sheet-surface" role="main" tabindex="-1">
+      <!-- 滚动容器：role=region 而非 grid —— grid 的直接子级必须是 row/rowgroup，
+           这里包着一层 <table>，放 grid 会触发 aria-required-children -->
       <div
         ref="gridWrapRef"
         class="grid-wrap"
         tabindex="0"
-        role="grid"
-        aria-label="表格编辑区"
+        role="region"
+        aria-label="表格编辑区（可滚动）"
         @keydown="handleGridKeydown"
       >
-        <table class="sheet-grid">
+        <table
+          class="sheet-grid"
+          :class="{ resizing: resizePreview !== null }"
+          role="grid"
+          aria-label="表格编辑区"
+          :aria-rowcount="displayRows"
+          :aria-colcount="displayCols + 1"
+        >
+          <!-- 列宽由 colgroup 给出（CSS 固定 min-width 会被它取代），
+               未自定义的列走默认 96px -->
+          <colgroup>
+            <col class="corner-col" :style="{ width: `${CORNER_W}px` }" />
+            <col
+              v-for="c in displayCols"
+              :key="`colw-${c}`"
+              :style="{ width: `${colWidthOf(c - 1)}px` }"
+            />
+          </colgroup>
           <thead>
             <tr>
-              <th class="corner" />
+              <th class="corner" scope="col" aria-label="行号列" />
               <th
                 v-for="(label, c) in columnHeaders"
                 :key="`col-${c}`"
+                scope="col"
+                :aria-label="`第 ${c + 1} 列 ${label}`"
                 :class="{
                   'col-active': c >= range.c1 && c <= range.c2,
                 }"
               >
                 {{ label }}
+                <!-- 右边缘拖拽调列宽；双击恢复默认 -->
+                <span
+                  class="resize-handle col-resize"
+                  :aria-hidden="true"
+                  title="拖动调整列宽，双击恢复默认"
+                  @mousedown="startColResize(c, $event)"
+                  @dblclick.stop.prevent="resetColWidth(c)"
+                />
               </th>
             </tr>
           </thead>
           <tbody>
-            <tr v-for="r in displayRows" :key="`row-${r}`">
+            <tr
+              v-for="r in displayRows"
+              :key="`row-${r}`"
+              :style="{ height: `${rowHeightOf(r - 1)}px` }"
+            >
               <th
                 class="row-head"
+                scope="row"
+                :aria-label="`第 ${r} 行`"
                 :class="{ 'row-active': r - 1 >= range.r1 && r - 1 <= range.r2 }"
               >
                 {{ r }}
+                <!-- 下边缘拖拽调行高；双击恢复默认 -->
+                <span
+                  class="resize-handle row-resize"
+                  :aria-hidden="true"
+                  title="拖动调整行高，双击恢复默认"
+                  @mousedown="startRowResize(r - 1, $event)"
+                  @dblclick.stop.prevent="resetRowHeight(r - 1)"
+                />
               </th>
               <td
                 v-for="c in displayCols"
                 :key="`cell-${r - 1}-${c - 1}`"
+                role="gridcell"
+                :aria-selected="isSelected(r - 1, c - 1)"
+                :aria-label="`${columnLabel(c - 1)}${r} ${displayValue(r - 1, c - 1)}`"
                 :class="{
                   selected: isSelected(r - 1, c - 1),
                   focus: isFocus(r - 1, c - 1),
                   editing: isEditing(r - 1, c - 1),
                 }"
-                :style="cellCssStyle(r - 1, c - 1)"
+                :style="{ ...cellCssStyle(r - 1, c - 1), ...remoteCursorStyle(r - 1, c - 1) }"
                 :data-remote-name="remoteCursorAt(r - 1, c - 1)?.name"
                 @mousedown="handleCellMouseDown(r - 1, c - 1, $event)"
                 @dblclick="handleCellDblClick($event)"
@@ -1182,18 +1726,65 @@ onBeforeUnmount(() => {
   outline: 2px solid #2080f0;
   outline-offset: -2px;
 }
+.cf-panel {
+  width: min(380px, 86vw);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.cf-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: space-between;
+}
+.cf-label {
+  font-size: 12px;
+  color: #646a73;
+  margin-right: 4px;
+}
+.cf-swatch {
+  width: 18px;
+  height: 18px;
+  border-radius: 3px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  cursor: pointer;
+  display: inline-block;
+  flex: none;
+}
+.cf-swatch.active {
+  outline: 2px solid #2080f0;
+  outline-offset: 1px;
+}
+.cf-list {
+  max-height: 200px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.cf-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .sheet-grid {
   border-collapse: collapse;
   table-layout: fixed;
   font-size: 13px;
 }
+/* 尺寸不写死：列宽由 <colgroup> 给出、行高由 <tr :style> 给出，
+   这里只保留边框与内边距（写 min-width/height 会盖掉自定义尺寸） */
 .sheet-grid th,
 .sheet-grid td {
   border: 1px solid var(--border-subtle);
-  min-width: 96px;
-  height: 30px;
   padding: 0;
   box-sizing: border-box;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .sheet-grid thead th {
   position: sticky;
@@ -1201,14 +1792,12 @@ onBeforeUnmount(() => {
   z-index: 2;
   background: var(--bg-muted);
   font-weight: 600;
-  color: #888;
+  color: #646a73;
   text-align: center;
-  min-width: 96px;
 }
 .sheet-grid thead th.corner {
   left: 0;
   z-index: 3;
-  min-width: 48px;
   width: 48px;
 }
 .sheet-grid .row-head {
@@ -1217,11 +1806,42 @@ onBeforeUnmount(() => {
   z-index: 1;
   background: var(--bg-muted);
   font-weight: 500;
-  color: #888;
+  color: #646a73;
   text-align: center;
-  min-width: 48px;
   width: 48px;
 }
+/* 表头边缘缩放手柄：平时透明，悬停表头才显现 */
+.sheet-grid .resize-handle {
+  position: absolute;
+  background: transparent;
+}
+.sheet-grid .col-resize {
+  top: 0;
+  right: -3px;
+  width: 7px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 4;
+}
+.sheet-grid .row-resize {
+  left: 0;
+  bottom: -3px;
+  width: 100%;
+  height: 7px;
+  cursor: row-resize;
+  z-index: 4;
+}
+.sheet-grid thead th:hover .resize-handle,
+.sheet-grid .row-head:hover .resize-handle,
+.sheet-grid .resize-handle:hover {
+  background: rgba(32, 128, 240, 0.35);
+}
+/* 拖拽中关闭选中与图片拖影，避免误触拖拽选区 */
+.sheet-grid.resizing,
+.sheet-grid.resizing * {
+  user-select: none !important;
+}
+
 .sheet-grid th.col-active,
 .sheet-grid th.row-active {
   color: #2080f0;
@@ -1266,7 +1886,8 @@ onBeforeUnmount(() => {
   line-height: 1;
   padding: 1px 4px;
   border-radius: 3px 0 0 3px;
-  background: #f06292;
+  /* 用该用户自己的 awareness 颜色（原为硬编码的固定粉色，多人时分不清谁是谁） */
+  background: var(--remote-color, #f06292);
   color: #fff;
   pointer-events: none;
   z-index: 1;
