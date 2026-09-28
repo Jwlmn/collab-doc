@@ -1,11 +1,26 @@
 import { Extension } from '@tiptap/core'
-import type { ChainedCommands } from '@tiptap/core'
+import type { ChainedCommands, Editor } from '@tiptap/core'
 import Suggestion from '@tiptap/suggestion'
+
+/**
+ * 图片条目的处理器由编辑器视图注册（那里能拿到 Naive 的 message 上下文，
+ * 以及工具栏已有的文件选择逻辑）。斜杠菜单只负责调用它。
+ */
+let imageHandler: ((editor: Editor) => void) | null = null
+
+export function setImageHandler(handler: (editor: Editor) => void): void {
+  imageHandler = handler
+}
 
 export interface SlashItem {
   title: string
   keywords: string
   command: (chain: ChainedCommands) => ChainedCommands
+  /**
+   * 需要跳出命令链的条目（如图片：要先走文件选择与上传）。
+   * 提供时优先于 command，command 仅作类型占位。
+   */
+  action?: (editor: Editor) => void
 }
 
 /** 斜杠菜单可插入的块级命令 */
@@ -49,6 +64,13 @@ export const SLASH_ITEMS: SlashItem[] = [
     title: '分割线',
     keywords: 'hr divider 分隔线',
     command: (chain) => chain.setHorizontalRule(),
+  },
+  {
+    title: '图片',
+    keywords: 'image img picture 图片 插图',
+    // 占位：实际走 action（需要先选文件、上传）
+    command: (chain) => chain,
+    action: (editor) => imageHandler?.(editor),
   },
 ]
 
@@ -201,9 +223,14 @@ export const SlashCommand = Extension.create({
         // 默认 allowedPrefixes=[' ']（仅空格/行首后触发）；中文无空格习惯，改为任意位置可触发
         allowedPrefixes: null,
         command: ({ editor, range, props }) => {
-          props
-            .command(editor.chain().focus().deleteRange(range))
-            .run()
+          // 先删掉 "/" 查询串，再走条目（action 型条目跳出命令链）
+          const chain = editor.chain().focus().deleteRange(range)
+          if (props.action) {
+            chain.run()
+            props.action(editor)
+            return
+          }
+          props.command(chain).run()
         },
         items: ({ query }) => filterItems(query),
         render: () => createSlashPopup(),

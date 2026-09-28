@@ -128,6 +128,24 @@ describe('serializeMarkdown', () => {
     })
     expect(serializeMarkdown(json)).toBe('价格 \\*便宜\\* \\[链接\\]')
   })
+
+  it('图片单独成段', () => {
+    const json = doc(
+      { type: 'paragraph', content: [{ type: 'text', text: '配图如下' }] },
+      { type: 'paragraph', content: [{ type: 'image', attrs: { src: '/api/images/a.png', alt: '截图' } }] },
+    )
+    expect(serializeMarkdown(json)).toBe('配图如下\n\n![截图](/api/images/a.png)')
+  })
+
+  it('图片无 src 时整段丢弃', () => {
+    const json = doc({ type: 'paragraph', content: [{ type: 'image', attrs: { src: '', alt: '空' } }] })
+    expect(serializeMarkdown(json)).toBe('')
+  })
+
+  it('alt 里的中括号会被转义', () => {
+    const json = doc({ type: 'paragraph', content: [{ type: 'image', attrs: { src: '/i.png', alt: '图[1]' } }] })
+    expect(serializeMarkdown(json)).toBe('![图\\[1\\]](/i.png)')
+  })
 })
 
 describe('parseMarkdown', () => {
@@ -264,6 +282,32 @@ describe('parseMarkdown', () => {
   it('空文档返回空段落', () => {
     expect(parseMarkdown('')).toEqual(doc({ type: 'paragraph' }))
   })
+
+  it('图片语法解析为 image 节点', () => {
+    expect(parseMarkdown('![截图](/api/images/a.png)')).toEqual(
+      doc({
+        type: 'paragraph',
+        content: [{ type: 'image', attrs: { src: '/api/images/a.png', alt: '截图' } }],
+      }),
+    )
+  })
+
+  it('图片与文本混排时前缀文本不丢', () => {
+    const json = parseMarkdown('看图 ![一朵花](/i/flower.png) 结束')
+    expect(json.content).toEqual([
+      { type: 'paragraph', content: [
+        { type: 'text', text: '看图 ' },
+        { type: 'image', attrs: { src: '/i/flower.png', alt: '一朵花' } },
+        { type: 'text', text: ' 结束' },
+      ] },
+    ])
+  })
+
+  it('裸 ! 不误判为图片', () => {
+    expect(parseMarkdown('惊！真的吗')).toEqual(
+      doc({ type: 'paragraph', content: [{ type: 'text', text: '惊！真的吗' }] }),
+    )
+  })
 })
 
 describe('roundtrip（md → json → md）', () => {
@@ -276,6 +320,8 @@ describe('roundtrip（md → json → md）', () => {
     '---',
     '| 名称 | 数量 |\n| --- | --- |\n| 苹果 | 3 |',
     '见 [链接](https://example.com) 说明',
+    '![截图](/api/images/a.png)',
+    '中间 ![图](/i/x.png) 文字',
   ]
 
   for (const md of cases) {

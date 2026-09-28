@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\CommentController;
 use App\Http\Controllers\Api\DocumentController;
 use App\Http\Controllers\Api\DocumentMemberController;
 use App\Http\Controllers\Api\DocumentVersionController;
+use App\Http\Controllers\Api\ImageController;
 use App\Http\Controllers\Api\InviteController;
 use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\UserController;
@@ -14,7 +15,14 @@ use Illuminate\Support\Facades\Route;
 Route::post('/register', [AuthController::class, 'register'])->middleware('throttle:10,1');
 Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:10,1');
 
+// 图片读取公开（UUID 不可猜测，协作者/分享访客需无凭证访问）；上传须登录
+Route::get('/images/{filename}', [ImageController::class, 'show'])
+    ->where('filename', '[0-9a-f\-]+\.[a-z]+')
+    ->middleware('throttle:120,1');
+
 Route::middleware('auth:sanctum')->group(function () {
+    Route::post('/images', [ImageController::class, 'store'])->middleware('throttle:30,1');
+
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::get('/user', [AuthController::class, 'user']);
 

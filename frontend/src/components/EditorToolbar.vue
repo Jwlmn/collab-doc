@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import type { Editor } from '@tiptap/vue-3'
-import { useDialog } from 'naive-ui'
+import { useDialog, useMessage } from 'naive-ui'
+import { getApiErrorMessage } from '../utils/request'
+import { uploadImage } from '../utils/upload'
 
 const props = defineProps<{
   editor: Editor | null
@@ -9,6 +11,7 @@ const props = defineProps<{
 }>()
 
 const dialog = useDialog()
+const message = useMessage()
 
 /** 事务版本号：驱动 isActive 状态在选区/内容变化时刷新 */
 const tick = ref(0)
@@ -87,6 +90,36 @@ const tableMenuOptions = computed(() =>
       ]
     : [{ key: 'insert', label: '插入表格（3 列 × 3 行）' }],
 )
+
+/* ---------------- 图片 ---------------- */
+
+const fileInputRef = ref<HTMLInputElement | null>(null)
+const uploading = ref(false)
+
+function openImagePicker(): void {
+  if (props.readonly || uploading.value) return
+  fileInputRef.value?.click()
+}
+
+async function handleImagePick(event: Event): Promise<void> {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  // 清空 value：同一文件再次选择时也要触发 change
+  input.value = ''
+  if (!file || !props.editor) return
+
+  uploading.value = true
+  const hide = message.loading('图片上传中…', { duration: 0 })
+  try {
+    const { url } = await uploadImage(file)
+    props.editor.chain().focus().setImage({ src: url, alt: file.name }).run()
+  } catch (error) {
+    message.error(getApiErrorMessage(error))
+  } finally {
+    hide.destroy()
+    uploading.value = false
+  }
+}
 
 function handleTableMenu(key: string) {
   const action = key as TableAction
@@ -287,6 +320,32 @@ function handleTableMenu(key: string) {
     </n-tooltip>
 
     <n-divider vertical />
+
+    <n-tooltip trigger="hover">
+      <template #trigger>
+        <n-button
+          size="small"
+          quaternary
+          aria-label="插入图片"
+          :disabled="readonly"
+          :loading="uploading"
+          @click="openImagePicker"
+        >
+          图片
+        </n-button>
+      </template>
+      插入图片（支持粘贴 / 拖拽）
+    </n-tooltip>
+
+    <input
+      ref="fileInputRef"
+      type="file"
+      accept="image/*"
+      hidden
+      aria-hidden="true"
+      tabindex="-1"
+      @change="handleImagePick"
+    />
 
     <n-tooltip trigger="hover">
       <template #trigger>

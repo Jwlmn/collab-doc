@@ -71,6 +71,9 @@ function inlineToMd(nodes: JSONContent[] | undefined): string {
         return out
       }
 
+      // 图片（块级时由 blockToMd 处理，行内出现时在此序列化）
+      if (node.type === 'image') return imageToMd(node)
+
       // 其它带内容的行内容器（如未来扩展）递归处理
       if (node.content) return inlineToMd(node.content)
       return ''
@@ -166,6 +169,14 @@ function tableToMd(node: JSONContent): string {
   return lines.join('\n')
 }
 
+/** image 节点 → `![alt](src)`；src 为空则整块丢弃（避免导出空图占位） */
+function imageToMd(node: JSONContent): string {
+  const src = String(node.attrs?.src ?? '')
+  if (!src) return ''
+  const alt = String(node.attrs?.alt ?? '').replace(/([[\]])/g, '\\$1')
+  return `![${alt}](${src})`
+}
+
 function blockToMd(node: JSONContent): string {
   switch (node.type) {
     case 'heading': {
@@ -188,6 +199,9 @@ function blockToMd(node: JSONContent): string {
         .join('\n')
     case 'horizontalRule':
       return '---'
+    case 'image':
+      // 图片是块级节点（Image 扩展 inline: false），单独成行
+      return imageToMd(node)
     case 'table':
       return tableToMd(node)
     default:
@@ -264,6 +278,20 @@ export function parseInline(text: string): JSONContent[] {
       if (end > i) {
         pushText(text.slice(i + 1, end), [{ type: 'code' }])
         i = end + 1
+        continue
+      }
+    }
+
+    // 图片 ![alt](src) —— 须在链接分支之前，否则 `!` 会被当普通文本缓冲
+    if (ch === '!') {
+      const imageMatch = /^!\[([^\]]*)\]\(([^)\s]+)\)/.exec(text.slice(i))
+      if (imageMatch) {
+        flush()
+        nodes.push({
+          type: 'image',
+          attrs: { src: imageMatch[2], alt: imageMatch[1] },
+        })
+        i += imageMatch[0].length
         continue
       }
     }
@@ -365,7 +393,8 @@ export function parseInline(text: string): JSONContent[] {
     }
   }
 
-  return merged.filter((n) => n.text !== undefined && n.text !== '')
+  // 只清掉空文本节点；image 等非文本节点原样保留
+  return merged.filter((n) => (n.type === 'text' ? !!n.text : true))
 }
 
 function paragraph(text: string): JSONContent {

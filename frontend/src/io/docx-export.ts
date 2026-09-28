@@ -4,6 +4,7 @@ import {
   Document,
   ExternalHyperlink,
   HeadingLevel,
+  ImageRun,
   Packer,
   Paragraph,
   ShadingType,
@@ -20,16 +21,131 @@ import type { JSONContent } from '@tiptap/core'
 
 const ORDERED_LIST_REFERENCE = 'collab-doc-ordered-list'
 
+/** 图片在 docx 中的最大显示宽度（px），超出按比例缩 */
+const MAX_IMAGE_WIDTH = 600
+
+/** 已预取的图片资源（构建 docx 时按 URL 取用） */
+interface ImageAsset {
+  data: ArrayBuffer
+  type: string
+  width: number
+  height: number
+}
+
+type ImageAssets = Map<string, ImageAsset>
+
+/** 段落可渲染的子节点 */
+type InlineChild = TextRun | ExternalHyperlink | ImageRun
+
 interface InlineContext {
   /** 链接栈（标记嵌套时保留最外层链接） */
   href?: string
+  /** 预取好的图片（没有则跳过图片节点） */
+  images?: ImageAssets
 }
 
-function inlineChildren(nodes: JSONContent[] | undefined, ctx: InlineContext = {}): (TextRun | ExternalHyperlink)[] {
+/**
+ * MIME → docx 可接受的图片类型（它的联合类型不含 webp）。
+ * 未识别的类型一律按 png 传（docx 会自行失败，但至少类型正确）。
+ */
+function docxImageType(mime: string): 'jpg' | 'png' | 'gif' | 'bmp' {
+  const base = mime.split(';')[0].toLowerCase()
+  if (base === 'image/jpeg' || base === 'image/jpg') return 'jpg'
+  if (base === 'image/gif') return 'gif'
+  if (base === 'image/bmp') return 'bmp'
+  return 'png'
+}
+
+/** 收集文档里所有图片 URL（去重） */
+export function collectImageSrcs(doc: JSONContent): string[] {
+  const srcs = new Set<string>()
+  const walk = (nodes: JSONContent[] | undefined): void => {
+    for (const node of nodes ?? []) {
+      if (node.type === 'image') {
+        const src = String(node.attrs?.src ?? '')
+        if (src && !src.startsWith('data:')) srcs.add(src)
+      }
+      walk(node.content)
+    }
+  }
+  walk(doc.content)
+  return [...srcs]
+}
+
+/**
+ * 预取图片字节与尺寸。
+ * 单张失败不影响整体导出（跳过该图），保证「导出总能出文件」。
+ */
+export async function fetchImageAssets(urls: string[]): Promise<ImageAssets> {
+  const assets: ImageAssets = new Map()
+
+  await Promise.all(
+    urls.map(async (url) => {
+      try {
+        const res = await fetch(url, { credentials: 'same-origin' })
+        if (!res.ok) return
+        const blob = await res.blob()
+        if (blob.size === 0) return
+
+        const { width, height } = await measureImage(blob)
+        const scaled = fitWithin(width, height, MAX_IMAGE_WIDTH)
+        assets.set(url, {
+          data: await blob.arrayBuffer(),
+          type: blob.type || 'image/png',
+          ...scaled,
+        })
+      } catch (error) {
+        console.warn('[docx] 图片预取失败，跳过', url, error)
+      }
+    }),
+  )
+
+  return assets
+}
+
+/** 读取图片原始宽高 */
+async function measureImage(blob: Blob): Promise<{ width: number; height: number }> {
+  if (typeof createImageBitmap === 'function') {
+    const bitmap = await createImageBitmap(blob)
+    const size = { width: bitmap.width, height: bitmap.height }
+    bitmap.close()
+    return size
+  }
+  // 兜底：固定比例（createImageBitmap 在部分环境不可用）
+  return { width: 400, height: 300 }
+}
+
+/** 等比缩放到 maxW 之内 */
+function fitWithin(width: number, height: number, maxW: number): { width: number; height: number } {
+  if (width <= 0 || height <= 0) return { width: maxW, height: Math.round(maxW * 0.75) }
+  if (width <= maxW) return { width, height }
+  const ratio = maxW / width
+  return { width: maxW, height: Math.max(1, Math.round(height * ratio)) }
+}
+
+function inlineChildren(nodes: JSONContent[] | undefined, ctx: InlineContext = {}): InlineChild[] {
   if (!nodes) return []
-  const out: (TextRun | ExternalHyperlink)[] = []
+  const out: InlineChild[] = []
 
   for (const node of nodes) {
+    if (node.type === 'image') {
+      const src = String(node.attrs?.src ?? '')
+      const asset = ctx.images?.get(src)
+      if (!asset) {
+        // 没预取到（加载失败/非法 src）→ 用 alt 文本占位，至少不丢语义
+        const alt = String(node.attrs?.alt ?? '').trim()
+        if (alt) out.push(new TextRun({ text: `[${alt}]`, color: '999999' }))
+        continue
+      }
+      out.push(
+        new ImageRun({
+          type: docxImageType(asset.type),
+          data: asset.data,
+          transformation: { width: asset.width, height: asset.height },
+        }),
+      )
+      continue
+    }
     if (node.type === 'hardBreak') {
       out.push(new TextRun({ break: 1 }))
       continue
@@ -72,8 +188,10 @@ function listLevel(_type: string, depth: number): number {
 function blocksToDocx(
   nodes: JSONContent[],
   depth = 0,
+  images?: ImageAssets,
 ): (Paragraph | Table)[] {
   const out: (Paragraph | Table)[] = []
+  const ctx: InlineContext = { images }
 
   for (const node of nodes) {
     switch (node.type) {
@@ -90,22 +208,22 @@ function blocksToDocx(
         out.push(
           new Paragraph({
             heading: map[level] ?? HeadingLevel.HEADING_1,
-            children: inlineChildren(node.content),
+            children: inlineChildren(node.content, ctx),
           }),
         )
         break
       }
 
       case 'paragraph':
-        out.push(new Paragraph({ children: inlineChildren(node.content) }))
+        out.push(new Paragraph({ children: inlineChildren(node.content, ctx) }))
         break
 
       case 'bulletList':
-        out.push(...listToDocx(node, false, depth))
+        out.push(...listToDocx(node, false, depth, images))
         break
 
       case 'orderedList':
-        out.push(...listToDocx(node, true, depth))
+        out.push(...listToDocx(node, true, depth, images))
         break
 
       case 'codeBlock': {
@@ -135,7 +253,7 @@ function blocksToDocx(
               }),
             )
           } else {
-            out.push(...blocksToDocx([child], depth))
+            out.push(...blocksToDocx([child], depth, images))
           }
         }
         break
@@ -153,11 +271,11 @@ function blocksToDocx(
         break
 
       case 'table':
-        out.push(tableToDocx(node))
+        out.push(tableToDocx(node, images))
         break
 
       default:
-        if (node.content) out.push(...blocksToDocx(node.content, depth))
+        if (node.content) out.push(...blocksToDocx(node.content, depth, images))
         break
     }
   }
@@ -171,8 +289,9 @@ function plainInline(node: JSONContent): string {
     .join('')
 }
 
-function listToDocx(list: JSONContent, ordered: boolean, depth: number): (Paragraph | Table)[] {
+function listToDocx(list: JSONContent, ordered: boolean, depth: number, images?: ImageAssets): (Paragraph | Table)[] {
   const out: (Paragraph | Table)[] = []
+  const ctx: InlineContext = { images }
   const items = list.content ?? []
 
   for (const item of items) {
@@ -183,7 +302,7 @@ function listToDocx(list: JSONContent, ordered: boolean, depth: number): (Paragr
       if (block.type === 'paragraph') {
         out.push(
           new Paragraph({
-            children: inlineChildren(block.content),
+            children: inlineChildren(block.content, ctx),
             ...(ordered
               ? { numbering: { reference: ORDERED_LIST_REFERENCE, level: listLevel('o', depth) } }
               : { bullet: { level: listLevel('u', depth) } }),
@@ -191,7 +310,7 @@ function listToDocx(list: JSONContent, ordered: boolean, depth: number): (Paragr
         )
         first = false
       } else if (block.type === 'bulletList' || block.type === 'orderedList') {
-        out.push(...listToDocx(block, block.type === 'orderedList', depth + 1))
+        out.push(...listToDocx(block, block.type === 'orderedList', depth + 1, images))
         first = false
       } else if (first) {
         out.push(
@@ -202,10 +321,10 @@ function listToDocx(list: JSONContent, ordered: boolean, depth: number): (Paragr
               : { bullet: { level: listLevel('u', depth) } }),
           }),
         )
-        out.push(...blocksToDocx([block], depth + 1))
+        out.push(...blocksToDocx([block], depth + 1, images))
         first = false
       } else {
-        out.push(...blocksToDocx([block], depth + 1))
+        out.push(...blocksToDocx([block], depth + 1, images))
       }
     }
   }
@@ -213,15 +332,16 @@ function listToDocx(list: JSONContent, ordered: boolean, depth: number): (Paragr
   return out
 }
 
-function tableToDocx(node: JSONContent): Table {
+function tableToDocx(node: JSONContent, images?: ImageAssets): Table {
   const rows = node.content ?? []
+  const ctx: InlineContext = { images }
 
   const docxRows = rows.map((row, rowIndex) => {
     const cells = (row.content ?? []).map((cell) => {
       const paragraphs = (cell.content ?? []).map((block) => {
         if (block.type === 'paragraph') {
           return new Paragraph({
-            children: inlineChildren(block.content),
+            children: inlineChildren(block.content, ctx),
             ...(rowIndex === 0
               ? { spacing: { before: 40, after: 40 } }
               : { spacing: { before: 20, after: 20 } }),
@@ -245,7 +365,7 @@ function tableToDocx(node: JSONContent): Table {
 }
 
 /** 构建 docx Document（亦供测试使用） */
-export function buildDocxDocument(doc: JSONContent, title: string): Document {
+export function buildDocxDocument(doc: JSONContent, title: string, images?: ImageAssets): Document {
   return new Document({
     title,
     numbering: {
@@ -264,7 +384,7 @@ export function buildDocxDocument(doc: JSONContent, title: string): Document {
     },
     sections: [
       {
-        children: blocksToDocx(doc.content ?? []),
+        children: blocksToDocx(doc.content ?? [], 0, images),
       },
     ],
   })
@@ -272,6 +392,8 @@ export function buildDocxDocument(doc: JSONContent, title: string): Document {
 
 /** Tiptap JSON → .docx Blob */
 export async function jsonToDocxBlob(doc: JSONContent, title: string): Promise<Blob> {
-  const document = buildDocxDocument(doc, title)
+  // 先取回图片字节（同步构建拿不到），再构建；单张失败自动跳过
+  const images = await fetchImageAssets(collectImageSrcs(doc))
+  const document = buildDocxDocument(doc, title, images)
   return Packer.toBlob(document)
 }

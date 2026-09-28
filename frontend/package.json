@@ -15,6 +15,7 @@
     "@hocuspocus/provider": "^4.7.0",
     "@tiptap/extension-collaboration": "^3.31.3",
     "@tiptap/extension-collaboration-caret": "^3.31.3",
+    "@tiptap/extension-image": "^3.31.3",
     "@tiptap/extension-table": "^3.31.3",
     "@tiptap/starter-kit": "^3.31.3",
     "@tiptap/suggestion": "^3.31.3",
