@@ -6,8 +6,9 @@ import { Editor, EditorContent } from '@tiptap/vue-3'
 import Collaboration from '@tiptap/extension-collaboration'
 import CollaborationCaret from '@tiptap/extension-collaboration-caret'
 import { BubbleMenu } from '@tiptap/extension-bubble-menu'
-import { SlashCommand } from '../extensions/slash-command'
+import { SlashCommand, setImageHandler } from '../extensions/slash-command'
 import { getBaseExtensions } from '../io/extensions'
+import { firstImageFile, uploadImage } from '../utils/upload'
 import { HocuspocusProvider } from '@hocuspocus/provider'
 import * as Y from 'yjs'
 import { useAuthStore } from '../stores/auth'
@@ -19,10 +20,11 @@ import CommentDrawer from '../components/CommentDrawer.vue'
 import EditorToolbar from '../components/EditorToolbar.vue'
 import ShareModal from '../components/ShareModal.vue'
 import { useImportFlowStore } from '../stores/importFlow'
+import { useAutoSnapshot } from '../composables/useAutoSnapshot'
 import { serializeMarkdown } from '../io/markdown'
 import { jsonToDocxBlob } from '../io/docx-export'
 import { downloadText } from '../io/download'
-import type { JSONContent } from '@tiptap/core'
+import type { Editor as CoreEditor, JSONContent } from '@tiptap/core'
 import type { DocumentMeta } from '../types'
 
 interface CollabTokenData {
@@ -39,13 +41,24 @@ interface Collaborator {
 const PAGE_TITLE = '多人实时协作文档'
 const importFlow = useImportFlowStore()
 
+const props = defineProps<{
+  /** 公开分享令牌：存在即进入访客只读模式（由 ShareView 传入） */
+  shareToken?: string
+  /** 访客模式下由 ShareView 预取的文档元数据 */
+  sharedMeta?: DocumentMeta
+}>()
+
+/** 访客模式：不再调用任何需要登录的接口 */
+const isShare = computed(() => !!props.shareToken)
+
 const route = useRoute()
 const router = useRouter()
 const message = useMessage()
 const auth = useAuthStore()
 
-const docId = computed(() => Number(route.params.id))
-const meta = ref<DocumentMeta | null>(null)
+// 访客态没有 /doc/:id 路由，文档 id 只能来自 sharedMeta
+const docId = computed(() => Number(props.sharedMeta?.id ?? route.params.id))
+const meta = ref<DocumentMeta | null>(props.sharedMeta ?? null)
 const loading = ref(true)
 const titleEditing = ref('')
 const titleInputRef = ref<{ focus: () => void; $el?: HTMLElement } | null>(null)
@@ -104,6 +117,17 @@ let ydoc: Y.Doc | null = null
 
 const isReadonly = computed(() => meta.value?.role === 'viewer')
 const canRename = computed(() => meta.value?.role === 'owner')
+
+/** 内容停更 60s 后自动存一版（只读时不存） */
+const autoSnapshot = useAutoSnapshot({
+  documentId: () => docId.value,
+  enabled: () => !isReadonly.value,
+  capture: () => {
+    const ed = editor.value
+    if (!ed) return null
+    return { content_json: ed.getJSON(), content_html: ed.getHTML() }
+  },
+})
 
 const hasUnsynced = computed(() => {
   void syncTick.value
@@ -174,6 +198,64 @@ async function focusTitleIfNew(): Promise<void> {
   void router.replace({ query: {} })
 }
 
+/** 在编辑器文档里找首个命中位置；找不到返回 -1 */
+function findTextPos(target: Editor, query: string): number {
+  const needle = query.toLowerCase()
+  let pos = -1
+
+  target.state.doc.descendants((node, nodePos) => {
+    if (pos !== -1) return false
+    if (!node.isText || !node.text) return true
+    const index = node.text.toLowerCase().indexOf(needle)
+    if (index === -1) return true
+    pos = nodePos + index
+    return false
+  })
+
+  return pos
+}
+
+/**
+ * 从搜索列表带着 `?find=` 进来时，跳到首个命中处并清掉参数。
+ *
+ * `synced` 只代表 Y.js 已拉取，内容刷进 ProseMirror 还要一帧，
+ * 所以这里做有界重试（约 10 次 × 60ms）；始终找不到就静默清参数 ——
+ * 搜索索引是最终一致的，可能已经过期。
+ */
+function jumpToFind(attempt = 0): void {
+  const raw = route.query.find
+  const query = typeof raw === 'string' ? raw.trim() : ''
+  if (!query) return
+
+  const target = editor.value
+  if (target) {
+    const pos = findTextPos(target, query)
+    if (pos !== -1) {
+      // 必须 focus：ProseMirror 在失焦时不同步 DOM 选区，用户看不到命中位置
+      target
+        .chain()
+        .focus()
+        .setTextSelection({ from: pos, to: pos + query.length })
+        .scrollIntoView()
+        .run()
+      const rest = { ...route.query }
+      delete rest.find
+      void router.replace({ query: rest })
+      return
+    }
+  }
+
+  if (attempt < 10) {
+    setTimeout(() => jumpToFind(attempt + 1), 60)
+    return
+  }
+
+  // 找不到：清参数，不留半截 query
+  const rest = { ...route.query }
+  delete rest.find
+  void router.replace({ query: rest })
+}
+
 /** 快捷键：⌘/Ctrl+Enter 开评论抽屉；? 开快捷键说明 */
 function handleKeydown(event: KeyboardEvent): void {
   const target = event.target as HTMLElement | null
@@ -197,24 +279,88 @@ function handleKeydown(event: KeyboardEvent): void {
   }
 }
 
+/* ---------------- 图片：选择 / 粘贴 / 拖拽 ---------------- */
+
+/**
+ * 走文件选择器插入图片（工具栏按钮与斜杠菜单共用）。
+ * 复用同一个隐藏 input，避免每次点击都新建 DOM。
+ */
+function pickImage(target: CoreEditor): void {
+  if (isReadonly.value) return
+  const input = document.createElement('input')
+  input.type = 'file'
+  input.accept = 'image/*'
+  input.onchange = async () => {
+    const file = input.files?.[0]
+    input.remove()
+    if (!file) return
+    await insertImageFile(target, file)
+  }
+  input.click()
+}
+
+async function insertImageFile(target: CoreEditor, file: File): Promise<void> {
+  if (isReadonly.value) return
+  const hide = message.loading('图片上传中…', { duration: 0 })
+  try {
+    const { url } = await uploadImage(file)
+    target.chain().focus().setImage({ src: url, alt: file.name }).run()
+  } catch (error) {
+    message.error(getApiErrorMessage(error))
+  } finally {
+    hide.destroy()
+  }
+}
+
+/** 粘贴/拖拽里的图片 → 上传后在指定位置插入；没有图片则交回默认行为 */
+function handleImageTransfer(event: ClipboardEvent | DragEvent): boolean {
+  if (isReadonly.value) return false
+  const data = 'clipboardData' in event ? event.clipboardData : event.dataTransfer
+  const file = firstImageFile(data?.files)
+  if (!file || !editor.value) return false
+
+  event.preventDefault()
+  // 拖拽：用落点定位插入位置；粘贴：用当前选区
+  if (event.type === 'drop') {
+    const coords = event as DragEvent
+    const pos = coords.clientX !== null
+      ? editor.value.view.posAtCoords({ left: coords.clientX, top: coords.clientY })
+      : null
+    if (pos) editor.value.chain().setTextSelection(pos.pos).run()
+  }
+  void insertImageFile(editor.value, file)
+  return true
+}
+
 onMounted(async () => {
   window.addEventListener('keydown', handleKeydown)
+  // 斜杠菜单的「图片」项：接到这里（有 message 上下文）
+  setImageHandler((ed) => pickImage(ed))
 
   try {
-    const { data } = await api.get(`/documents/${docId.value}`)
-    const loaded: DocumentMeta = data.data
-    meta.value = loaded
-    titleEditing.value = loaded.title
-    document.title = `${loaded.title} · ${PAGE_TITLE}`
+    if (isShare.value) {
+      // 访客：meta 已由 ShareView 传入（分享端点是访客专用的，不会 401）
+      if (meta.value) {
+        titleEditing.value = meta.value.title
+        document.title = `${meta.value.title} · ${PAGE_TITLE}`
+      }
+    } else {
+      const { data } = await api.get(`/documents/${docId.value}`)
+      const loaded: DocumentMeta = data.data
+      meta.value = loaded
+      titleEditing.value = loaded.title
+      document.title = `${loaded.title} · ${PAGE_TITLE}`
 
-    // 防呆：excel 文档误入富文本路由
-    if (loaded.type === 'excel') {
-      await router.replace(`/sheet/${loaded.id}`)
-      return
+      // 防呆：excel 文档误入富文本路由
+      if (loaded.type === 'excel') {
+        await router.replace(`/sheet/${loaded.id}`)
+        return
+      }
     }
   } catch (error) {
     message.error(getApiErrorMessage(error))
-    await router.replace('/')
+    // 访客态没有首页权限，跳过去只会被路由守卫踢回登录
+    if (!isShare.value) await router.replace('/')
     return
   } finally {
     loading.value = false
@@ -227,24 +373,33 @@ onMounted(async () => {
     },
   )
 
-  // 评论未读徽标
-  try {
-    const { data } = await api.get(`/documents/${docId.value}/comments/unread`)
-    unreadComments.value = data.data.count
-  } catch {
-    unreadComments.value = 0
+  // 评论未读徽标（访客无权读评论，跳过 —— 调用会 401）
+  if (!isShare.value) {
+    try {
+      const { data } = await api.get(`/documents/${docId.value}/comments/unread`)
+      unreadComments.value = data.data.count
+    } catch {
+      unreadComments.value = 0
+    }
   }
 
-  // 获取协作连接令牌（无权限或令牌失效时服务端会拒绝连接）
+  // 协作连接令牌：访客走分享端点（viewer 只读），成员走已鉴权端点
   let collabToken = ''
   try {
-    const { data } = await api.post<never, { data: { data: CollabTokenData } }>(
-      `/documents/${docId.value}/collab-token`,
-    )
-    collabToken = data.data.token
+    if (isShare.value) {
+      const { data } = await api.get<never, { data: { data: CollabTokenData } }>(
+        `/share/${props.shareToken}/collab-token`,
+      )
+      collabToken = data.data.token
+    } else {
+      const { data } = await api.post<never, { data: { data: CollabTokenData } }>(
+        `/documents/${docId.value}/collab-token`,
+      )
+      collabToken = data.data.token
+    }
   } catch (error) {
     message.error(getApiErrorMessage(error))
-    await router.replace('/')
+    if (!isShare.value) await router.replace('/')
     return
   }
 
@@ -294,7 +449,8 @@ onMounted(async () => {
       CollaborationCaret.configure({
         provider,
         user: {
-          name: auth.user?.name ?? '匿名',
+          // 访客没有登录态，用「访客」占位，避免两个匿名者同名撞车
+          name: auth.user?.name ?? (isShare.value ? '访客' : '匿名'),
           color: userColor.value,
         },
       }),
@@ -305,11 +461,23 @@ onMounted(async () => {
       attributes: {
         class: 'doc-editor-content',
       },
+      // 截图/拖图直接进文档（返回 false 则走默认行为）
+      handlePaste: (view, event) => {
+        void view
+        return handleImageTransfer(event as ClipboardEvent)
+      },
+      handleDrop: (view, event) => {
+        void view
+        return handleImageTransfer(event as DragEvent)
+      },
     },
   })
 
   editor.value.on('transaction', () => {
     bubbleTick.value++
+  })
+  editor.value.on('update', () => {
+    autoSnapshot.notifyChange()
   })
 
   // 导入流程：协同首帧同步后写入种子内容（空文档专属，一次性消费）
@@ -336,6 +504,10 @@ onMounted(async () => {
   }
 
   await focusTitleIfNew()
+
+  // 搜索跳转：jumpToFind 自带重试，无需额外等 synced
+  await nextTick()
+  if (route.query.find) jumpToFind()
 })
 
 onBeforeUnmount(() => {
@@ -396,10 +568,11 @@ async function handleRename() {
             导出 ▾
           </n-button>
         </n-dropdown>
-        <n-badge :value="unreadComments" :max="99" :show="unreadComments > 0">
+        <!-- 访客无权读评论/版本（接口会 401），两个入口整体隐藏 -->
+        <n-badge v-if="!isShare" :value="unreadComments" :max="99" :show="unreadComments > 0">
           <n-button quaternary size="small" @click="commentDrawerVisible = true">评论</n-button>
         </n-badge>
-        <n-button quaternary size="small" @click="versionDrawerVisible = true">版本历史</n-button>
+        <n-button v-if="!isShare" quaternary size="small" @click="versionDrawerVisible = true">版本历史</n-button>
 
         <n-popover trigger="click" placement="bottom-end">
           <template #trigger>
@@ -531,6 +704,7 @@ async function handleRename() {
     </div>
 
     <VersionDrawer
+      v-if="!isShare"
       v-model:show="versionDrawerVisible"
       :document-id="docId"
       :editor="editor"
@@ -538,13 +712,14 @@ async function handleRename() {
     />
 
     <CommentDrawer
+      v-if="!isShare"
       v-model:show="commentDrawerVisible"
       :document-id="docId"
       :can-manage="auth.user?.id === meta?.user_id"
       @read="unreadComments = 0"
     />
 
-    <ShareModal v-model:show="shareVisible" :document-id="docId" />
+    <ShareModal v-if="!isShare" v-model:show="shareVisible" :document-id="docId" />
 
     <n-modal
       v-model:show="linkVisible"

@@ -113,6 +113,76 @@ class DocumentSearchTest extends TestCase
             ->assertJsonCount(0, 'data');
     }
 
+    public function test_comment_content_is_searchable(): void
+    {
+        $user = User::factory()->create();
+        $document = Document::factory()->for($user)->create(['title' => '无关标题']);
+        $document->comments()->create([
+            'user_id' => $user->id,
+            'content' => '这里的供应链接待确认',
+        ]);
+
+        $response = $this->actingAs($user)
+            ->getJson('/api/documents/search?'.http_build_query(['q' => '供应链']))
+            ->assertOk()
+            ->assertJsonCount(0, 'data');
+
+        $hits = $response->json('comment_hits');
+        $this->assertCount(1, $hits);
+        $this->assertSame('这里的供应链接待确认', $hits[0]['content']);
+        $this->assertSame($document->id, $hits[0]['document_id']);
+        $this->assertArrayHasKey('snippet', $hits[0]);
+    }
+
+    public function test_comment_search_respects_document_permissions(): void
+    {
+        $owner = User::factory()->create();
+        $stranger = User::factory()->create();
+        $document = Document::factory()->for($owner)->create();
+        $document->comments()->create([
+            'user_id' => $owner->id,
+            'content' => '越权评论关键词',
+        ]);
+
+        // 无权者的搜索不应看到别人文档的评论
+        $this->actingAs($stranger)
+            ->getJson('/api/documents/search?'.http_build_query(['q' => '越权评论']))
+            ->assertOk()
+            ->assertJsonCount(0, 'comment_hits');
+    }
+
+    public function test_comment_search_excludes_trashed_documents(): void
+    {
+        $user = User::factory()->create();
+        $document = Document::factory()->for($user)->create();
+        $document->comments()->create([
+            'user_id' => $user->id,
+            'content' => '回收站里的评论关键词',
+        ]);
+
+        $document->delete();
+
+        $this->actingAs($user)
+            ->getJson('/api/documents/search?'.http_build_query(['q' => '回收站里']))
+            ->assertOk()
+            ->assertJsonCount(0, 'comment_hits');
+    }
+
+    public function test_comment_search_escapes_like_wildcards(): void
+    {
+        $user = User::factory()->create();
+        $document = Document::factory()->for($user)->create();
+        $document->comments()->create([
+            'user_id' => $user->id,
+            'content' => '普通评论内容',
+        ]);
+
+        $this->actingAs($user)
+            ->getJson('/api/documents/search?'.http_build_query(['q' => '%']))
+            ->assertOk()
+            ->assertJsonCount(0, 'comment_hits');
+    }
+
     public function test_search_result_contains_role_and_snippet_fields(): void
     {
         $user = User::factory()->create();

@@ -15,7 +15,14 @@ import type { DocumentMeta } from '../types'
 
 /** 按文档类型打开对应编辑器 */
 function openDoc(doc: Pick<DocumentMeta, 'id' | 'type'>) {
-  return router.push(doc.type === 'excel' ? `/sheet/${doc.id}` : `/doc/${doc.id}`)
+  // 搜索态带 find，编辑器打开后跳到首个命中处
+  const query = documents.searching && documents.activeQuery
+    ? { find: documents.activeQuery }
+    : {}
+  return router.push({
+    path: doc.type === 'excel' ? `/sheet/${doc.id}` : `/doc/${doc.id}`,
+    query,
+  })
 }
 
 const documents = useDocumentsStore()
@@ -293,6 +300,18 @@ function memberAvatars(doc: DocumentMeta) {
 function formatTime(value?: string): string {
   return formatRelativeTime(value)
 }
+
+/**
+ * 空态文案：搜索时要区分「全都没命中」与「正文没命中但评论命中」，
+ * 否则会出现上面「没有找到」、下面却列出评论的自相矛盾。
+ */
+const emptyStateDescription = computed(() => {
+  if (!documents.searching) return '创建你的第一篇文档，开始写作'
+  if (documents.commentHits.length > 0) {
+    return `正文未命中「${documents.activeQuery}」，命中结果见下方评论`
+  }
+  return `没有找到与「${documents.activeQuery}」相关的文档`
+})
 </script>
 
 <template>
@@ -358,7 +377,7 @@ function formatTime(value?: string): string {
     <template v-else>
       <n-empty
         v-if="documents.list.length === 0"
-        :description="documents.searching ? `没有找到与「${documents.activeQuery}」相关的文档` : '创建你的第一篇文档，开始写作'"
+        :description="emptyStateDescription"
         style="margin-top: 64px"
       >
         <n-space v-if="!documents.searching">
@@ -472,6 +491,14 @@ function formatTime(value?: string): string {
               </span>
             </template>
             <template #description>
+              <!-- 搜索态：正文命中片段（高亮复用标题的 highlight 工具，模板渲染非 v-html） -->
+              <div v-if="documents.searching && doc.snippet" class="snippet">
+                <template v-for="(seg, index) in highlight(doc.snippet, documents.activeQuery)" :key="index">
+                  <mark v-if="seg.hit" class="search-hit">{{ seg.text }}</mark>
+                  <template v-else>{{ seg.text }}</template>
+                </template>
+              </div>
+
               <n-space
                 :size="6"
                 align="center"
@@ -556,6 +583,37 @@ function formatTime(value?: string): string {
       </n-list>
     </template>
 
+    <!-- 评论命中：评论不在正文索引里，单独成组展示 -->
+    <div v-if="documents.searching && documents.commentHits.length > 0" class="comment-hits">
+      <n-divider title placement="left">评论命中（{{ documents.commentHits.length }}）</n-divider>
+      <n-list bordered>
+        <n-list-item v-for="hit in documents.commentHits" :key="hit.id">
+          <n-thing :title="hit.document_title">
+            <template #description>
+              <div class="comment-snippet">
+                <template v-for="(seg, index) in highlight(hit.snippet ?? hit.content, documents.activeQuery)" :key="index">
+                  <mark v-if="seg.hit" class="search-hit">{{ seg.text }}</mark>
+                  <template v-else>{{ seg.text }}</template>
+                </template>
+              </div>
+              <n-text depth="3" style="font-size: 12px">
+                {{ hit.user?.name ?? '未知用户' }} · {{ formatTime(hit.created_at) }}
+              </n-text>
+            </template>
+          </n-thing>
+          <template #suffix>
+            <n-button
+              size="small"
+              quaternary
+              @click="openDoc({ id: hit.document_id, type: hit.doc_type })"
+            >
+              打开
+            </n-button>
+          </template>
+        </n-list-item>
+      </n-list>
+    </div>
+
     <n-modal
       v-model:show="renameDialogVisible"
       preset="dialog"
@@ -599,6 +657,22 @@ function formatTime(value?: string): string {
   color: inherit;
   border-radius: 2px;
   padding: 0 1px;
+}
+/* 正文片段：截断显示，避免长段落撑破列表项 */
+.snippet,
+.comment-snippet {
+  font-size: 13px;
+  color: var(--text-2, #646a73);
+  line-height: 1.6;
+  margin-top: 4px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.comment-hits {
+  margin-top: 24px;
 }
 .skeleton-list {
   margin-top: 8px;

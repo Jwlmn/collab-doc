@@ -73,3 +73,88 @@ jobs:
 
       - name: Build
         run: npm run build
+
+  e2e:
+    name: E2E (Playwright)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      # 真实环境变量优先于 .env —— 这里统一覆盖，避免 CI/本机配置漂移
+      DB_CONNECTION: pgsql
+      DB_HOST: 127.0.0.1
+      DB_PORT: "5432"
+      DB_DATABASE: collab_doc
+      DB_USERNAME: collab
+      DB_PASSWORD: secret
+      # Laravel config('collab.secret') 与 HocusPocus 进程必须同源
+      COLLAB_SECRET: ci-collab-secret
+      APP_URL: http://localhost:8000
+      # Sanctum 按 host:port 匹配 stateful 域名，Vite 代理下两种形式都要覆盖
+      SANCTUM_STATEFUL_DOMAINS: localhost,localhost:5173,127.0.0.1,127.0.0.1:5173,127.0.0.1:8000
+      # php artisan serve 单线程：collab.spec 双页面会并发打 API
+      PHP_CLI_SERVER_WORKERS: "4"
+      # 防代理劫持 localhost（症状：connection refused / 神秘超时）
+      HTTP_PROXY: ""
+      HTTPS_PROXY: ""
+      http_proxy: ""
+      https_proxy: ""
+      NO_PROXY: localhost,127.0.0.1
+      no_proxy: localhost,127.0.0.1
+      CI: "true"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.5'
+          # pgsql 是必须的：collab server 硬编码用 pg，测试库不能走 sqlite
+          extensions: mbstring, dom, fileinfo, pgsql, pdo_pgsql, sqlite3, pdo_sqlite
+          coverage: none
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install backend dependencies
+        run: composer install --no-interaction --no-progress --prefer-dist
+        working-directory: backend
+
+      - name: Install frontend dependencies
+        run: npm ci
+        working-directory: frontend
+
+      - name: Install collab server dependencies
+        run: npm ci
+        working-directory: server
+
+      # 用 compose 而非 GHA services：pg_trgm 由 docker/postgres/init 创建，
+      # 而 service 容器挂不了卷（没有它，search_text 的 gin_trgm_ops 索引迁移会失败）
+      - name: Start PostgreSQL + Redis
+        run: docker compose up -d --wait postgres redis
+
+      # 顺序必须是 migrate 之后才起 collab server：
+      # 它的 ensureSchema 用 CREATE TABLE IF NOT EXISTS，与 Laravel 的建表迁移冲突
+      - name: Prepare .env and migrate
+        working-directory: backend
+        run: cp .env.example .env && php artisan key:generate --force && php artisan migrate --force
+
+      - name: Install Playwright Chrome
+        working-directory: frontend
+        # --with-deps 会补系统库并确保 channel: chrome 可用。
+        # CI 无代理限制，下载没问题（本机不跑这步 —— 本机用系统 Chrome）
+        run: npx playwright install --with-deps chrome
+
+      - name: Run E2E
+        run: ./scripts/e2e.sh
+
+      - name: Upload Playwright traces
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-results
+          path: frontend/test-results
+          retention-days: 7

@@ -24,5 +24,7 @@ test('注册 → 新建 MD 文档 → 富文本编辑 → 内容搜索命中', a
   await expect(page).toHaveURL(/\/$/)
   await page.getByPlaceholder(/搜索标题/).fill('E2E 协同冒烟')
   await expect(page.getByRole('heading', { name: '搜索结果' })).toBeVisible()
-  await expect(page.locator('.doc-list .n-list-item')).toHaveCount(1, { timeout: 10_000 })
+  // onStoreDocument 的 maxDebounce 是 10s：持续写入下可能推到 10s 才落库，
+  // 10s 断言在 CI 上是边缘竞态，放宽到 15s
+  await expect(page.locator('.doc-list .n-list-item')).toHaveCount(1, { timeout: 15_000 })
 })

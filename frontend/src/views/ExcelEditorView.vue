@@ -10,7 +10,8 @@ import { getCollabUrl } from '../utils/collab'
 import { userColor as colorOf } from '../utils/color'
 import { useImportFlowStore } from '../stores/importFlow'
 import { exportGridToXlsx, columnLabel } from '../io/cells'
-import { SheetModel, columnLabels, DEFAULT_COLS, type CellStyle } from '../io/sheet-model'
+import { SheetModel, columnLabels, gridToHtml, DEFAULT_COLS, type CellStyle } from '../io/sheet-model'
+import { useAutoSnapshot } from '../composables/useAutoSnapshot'
 import { evaluateCellDisplay, isFormula } from '../io/formula'
 import CommentDrawer from '../components/CommentDrawer.vue'
 import SheetVersionDrawer from '../components/SheetVersionDrawer.vue'
@@ -30,14 +31,25 @@ interface Collaborator {
 
 const PAGE_TITLE = '多人实时协作文档'
 
+const props = defineProps<{
+  /** 公开分享令牌：存在即进入访客只读模式（由 ShareView 传入） */
+  shareToken?: string
+  /** 访客模式下由 ShareView 预取的文档元数据 */
+  sharedMeta?: DocumentMeta
+}>()
+
+/** 访客模式：不再调用任何需要登录的接口 */
+const isShare = computed(() => !!props.shareToken)
+
 const route = useRoute()
 const router = useRouter()
 const message = useMessage()
 const auth = useAuthStore()
 const importFlow = useImportFlowStore()
 
-const docId = computed(() => Number(route.params.id))
-const meta = ref<DocumentMeta | null>(null)
+// 访客态没有 /sheet/:id 路由，文档 id 只能来自 sharedMeta
+const docId = computed(() => Number(props.sharedMeta?.id ?? route.params.id))
+const meta = ref<DocumentMeta | null>(props.sharedMeta ?? null)
 const loading = ref(true)
 const titleEditing = ref('')
 const titleInputRef = ref<{ focus: () => void; $el?: HTMLElement } | null>(null)
@@ -548,6 +560,17 @@ function captureSnapshot(): { grid: ReturnType<SheetModel['toGrid']> } | null {
   return { grid: model.toGrid() }
 }
 
+/** 内容停更 60s 后自动存一版（只读时不存） */
+const autoSnapshot = useAutoSnapshot({
+  documentId: () => docId.value,
+  enabled: () => !isReadonly.value,
+  capture: () => {
+    const snapshot = captureSnapshot()
+    if (!snapshot) return null
+    return { content_json: snapshot, content_html: gridToHtml(snapshot.grid) }
+  },
+})
+
 /** 版本恢复：整体替换网格（协同广播给所有端） */
 function restoreSnapshot(grid: ReturnType<SheetModel['toGrid']>): void {
   if (!model || isReadonly.value) return
@@ -600,20 +623,29 @@ onMounted(async () => {
   window.addEventListener('pointerdown', handlePointerDown, true)
 
   try {
-    const { data } = await api.get(`/documents/${docId.value}`)
-    const loaded: DocumentMeta = data.data
-    meta.value = loaded
-    titleEditing.value = loaded.title
-    document.title = `${loaded.title} · ${PAGE_TITLE}`
+    if (isShare.value) {
+      // 访客：meta 已由 ShareView 传入（分享端点访客专用，不会 401）
+      if (meta.value) {
+        titleEditing.value = meta.value.title
+        document.title = `${meta.value.title} · ${PAGE_TITLE}`
+      }
+    } else {
+      const { data } = await api.get(`/documents/${docId.value}`)
+      const loaded: DocumentMeta = data.data
+      meta.value = loaded
+      titleEditing.value = loaded.title
+      document.title = `${loaded.title} · ${PAGE_TITLE}`
 
-    // 防呆：md 文档误入表格路由
-    if ((loaded.type ?? 'md') === 'md') {
-      await router.replace(`/doc/${loaded.id}`)
-      return
+      // 防呆：md 文档误入表格路由
+      if ((loaded.type ?? 'md') === 'md') {
+        await router.replace(`/doc/${loaded.id}`)
+        return
+      }
     }
   } catch (error) {
     message.error(getApiErrorMessage(error))
-    await router.replace('/')
+    // 访客态没有首页权限，跳过去只会被路由守卫踢回登录
+    if (!isShare.value) await router.replace('/')
     return
   } finally {
     loading.value = false
@@ -637,22 +669,33 @@ onMounted(async () => {
     void router.replace({ query: {} })
   }
 
-  try {
-    const { data } = await api.get(`/documents/${docId.value}/comments/unread`)
-    unreadComments.value = data.data.count
-  } catch {
-    unreadComments.value = 0
+  // 评论未读徽标（访客无权读评论，跳过 —— 调用会 401）
+  if (!isShare.value) {
+    try {
+      const { data } = await api.get(`/documents/${docId.value}/comments/unread`)
+      unreadComments.value = data.data.count
+    } catch {
+      unreadComments.value = 0
+    }
   }
 
+  // 协作连接令牌：访客走分享端点（viewer 只读），成员走已鉴权端点
   let collabToken = ''
   try {
-    const { data } = await api.post<never, { data: { data: CollabTokenData } }>(
-      `/documents/${docId.value}/collab-token`,
-    )
-    collabToken = data.data.token
+    if (isShare.value) {
+      const { data } = await api.get<never, { data: { data: CollabTokenData } }>(
+        `/share/${props.shareToken}/collab-token`,
+      )
+      collabToken = data.data.token
+    } else {
+      const { data } = await api.post<never, { data: { data: CollabTokenData } }>(
+        `/documents/${docId.value}/collab-token`,
+      )
+      collabToken = data.data.token
+    }
   } catch (error) {
     message.error(getApiErrorMessage(error))
-    await router.replace('/')
+    if (!isShare.value) await router.replace('/')
     return
   }
 
@@ -683,7 +726,7 @@ onMounted(async () => {
 
   // awareness：先播报用户，再跟随焦点播报单元格
   provider.awareness?.setLocalStateField('user', {
-    name: auth.user?.name ?? '匿名',
+    name: auth.user?.name ?? (isShare.value ? '访客' : '匿名'),
     color: userColor.value,
   })
   provider.awareness?.on('change', refreshPresence)
@@ -691,6 +734,7 @@ onMounted(async () => {
 
   stopObserve = model.observe(() => {
     dataRevision.value++
+    autoSnapshot.notifyChange()
   })
 
   // 同步完成后：旧版 cells 迁移 + 导入种子 / 新文档补初始行
@@ -723,7 +767,56 @@ onMounted(async () => {
     }
     provider.on('synced', onSynced)
   }
+
+  // 搜索跳转：等 seed/迁移完成后（ready）再找
+  if (route.query.find) {
+    const runFind = () => {
+      if (ready.value) jumpToFind()
+      else setTimeout(runFind, 60)
+    }
+    setTimeout(runFind, 60)
+  }
 })
+
+/**
+ * 从搜索列表带着 `?find=` 进来时，选中首个命中的单元格并滚动到位。
+ * 找不到静默（索引最终一致，可能已过期）。
+ */
+function jumpToFind(): void {
+  const raw = route.query.find
+  const query = typeof raw === 'string' ? raw.trim() : ''
+  if (!query || !model) return
+
+  const needle = query.toLowerCase()
+  const rows = model.rowCount
+  const cols = Math.max(model.colCount, 1)
+
+  let hit: { r: number; c: number } | null = null
+  for (let r = 0; r < rows && !hit; r++) {
+    for (let c = 0; c < cols; c++) {
+      if (cellRaw(r, c).toLowerCase().includes(needle)) {
+        hit = { r, c }
+        break
+      }
+    }
+  }
+
+  if (hit) {
+    selectCell(hit.r, hit.c)
+    nextTick(() => {
+      const el = gridWrapRef.value
+      if (!el) return
+      // 让命中行居中：单元格是规则网格，用行高常量估算即可
+      const top = hit!.r * CELL_H
+      el.scrollTop = Math.max(0, top - el.clientHeight / 2)
+      el.focus()
+    })
+  }
+
+  const rest = { ...route.query }
+  delete rest.find
+  void router.replace({ query: rest })
+}
 
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', handleKeydown)
@@ -771,8 +864,9 @@ onBeforeUnmount(() => {
         >
           导出
         </n-button>
-        <n-button quaternary size="small" @click="versionDrawerVisible = true">版本</n-button>
-        <n-badge :value="unreadComments" :max="99" :show="unreadComments > 0">
+        <n-button v-if="!isShare" quaternary size="small" @click="versionDrawerVisible = true">版本</n-button>
+        <!-- 访客无权读评论/版本（接口会 401），两个入口整体隐藏 -->
+        <n-badge v-if="!isShare" :value="unreadComments" :max="99" :show="unreadComments > 0">
           <n-button quaternary size="small" @click="commentDrawerVisible = true">评论</n-button>
         </n-badge>
 
@@ -960,6 +1054,7 @@ onBeforeUnmount(() => {
     </div>
 
     <CommentDrawer
+      v-if="!isShare"
       v-model:show="commentDrawerVisible"
       :document-id="docId"
       :can-manage="auth.user?.id === meta?.user_id"
@@ -967,6 +1062,7 @@ onBeforeUnmount(() => {
     />
 
     <SheetVersionDrawer
+      v-if="!isShare"
       v-model:show="versionDrawerVisible"
       :document-id="docId"
       :readonly="isReadonly"
@@ -974,7 +1070,7 @@ onBeforeUnmount(() => {
       :restore="restoreSnapshot"
     />
 
-    <ShareModal v-model:show="shareVisible" :document-id="docId" />
+    <ShareModal v-if="!isShare" v-model:show="shareVisible" :document-id="docId" />
 
     <n-modal v-model:show="helpVisible" preset="card" title="快捷键" style="width: 440px; max-width: 92vw">
       <n-text depth="3" style="display: block; margin-bottom: 12px; font-size: 13px">

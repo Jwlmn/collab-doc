@@ -38,6 +38,18 @@ export interface DocumentMeta {
   snippet?: string | null
 }
 
+/** 搜索结果里的评论命中（评论不在 documents.search_text 里，单独成组） */
+export interface CommentHit {
+  id: number
+  document_id: number
+  document_title: string
+  doc_type: DocumentType
+  content: string
+  snippet?: string | null
+  user: { id: number | null; name: string | null }
+  created_at?: string
+}
+
 export interface DocumentMember {
   id: number
   document_id: number

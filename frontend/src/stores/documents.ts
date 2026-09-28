@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { api } from '../utils/request'
-import type { DocumentMeta } from '../types'
+import type { CommentHit, DocumentMeta } from '../types'
 
 export const useDocumentsStore = defineStore('documents', () => {
   const list = ref<DocumentMeta[]>([])
@@ -10,11 +10,14 @@ export const useDocumentsStore = defineStore('documents', () => {
   /** 当前是否处于搜索模式 */
   const searching = ref(false)
   const activeQuery = ref('')
+  /** 评论命中（搜索模式下才有值） */
+  const commentHits = ref<CommentHit[]>([])
 
   async function fetch(): Promise<void> {
     loading.value = true
     activeQuery.value = ''
     searching.value = false
+    commentHits.value = []
     try {
       const { data } = await api.get('/documents')
       list.value = data.data
@@ -37,6 +40,7 @@ export const useDocumentsStore = defineStore('documents', () => {
     try {
       const { data } = await api.get('/documents/search', { params: { q } })
       list.value = data.data
+      commentHits.value = (data.comment_hits ?? []) as CommentHit[]
     } finally {
       loading.value = false
     }
@@ -63,5 +67,5 @@ export const useDocumentsStore = defineStore('documents', () => {
     list.value = list.value.filter((doc) => doc.id !== id)
   }
 
-  return { list, loading, searching, activeQuery, fetch, search, create, rename, remove }
+  return { list, loading, searching, activeQuery, commentHits, fetch, search, create, rename, remove }
 })

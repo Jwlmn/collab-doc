@@ -21,8 +21,10 @@ api.interceptors.response.use(
       const path = window.location.pathname
       const isAuthProbe = url.includes('/user')
       const onAuthPage = path.startsWith('/login') || path.startsWith('/register')
+      // 分享访客页无登录态：把用户踢去登录等于毁掉分享链接
+      const onSharePage = path.startsWith('/share')
 
-      if (!isAuthProbe && !onAuthPage) {
+      if (!isAuthProbe && !onAuthPage && !onSharePage) {
         window.location.assign(`/login?redirect=${encodeURIComponent(path)}`)
       }
     }

@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Http\Resources\DocumentResource;
+use App\Models\Comment;
 use App\Models\Document;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -85,7 +86,52 @@ class DocumentController extends Controller
             return $payload;
         });
 
-        return response()->json(['data' => $data]);
+        return response()->json([
+            'data' => $data,
+            // 评论命中单独成组：评论不在 documents.search_text 里（那是正文抽取）
+            'comment_hits' => $this->searchComments($user->id, $operator, $pattern, $query),
+        ]);
+    }
+
+    /**
+     * 搜索可见文档下的评论内容。
+     *
+     * 可见范围与文档一致（所有者 + 成员），越权文档的评论不会漏出。
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function searchComments(int $userId, string $operator, string $pattern, string $query): array
+    {
+        $comments = Comment::query()
+            ->with(['user:id,name', 'document:id,title,type,deleted_at'])
+            ->whereRaw("content {$operator} ? ESCAPE '\'", [$pattern])
+            ->whereHas('document', function ($accessible) use ($userId) {
+                $accessible
+                    ->whereNull('deleted_at')
+                    ->where(function ($scope) use ($userId) {
+                        $scope
+                            ->where('user_id', $userId)
+                            ->orWhereHas('members', fn ($member) => $member->where('user_id', $userId));
+                    });
+            })
+            ->orderByDesc('id')
+            ->limit(10)
+            ->get();
+
+        return $comments->map(fn (Comment $comment) => [
+            'id' => $comment->id,
+            'document_id' => $comment->document_id,
+            'document_title' => $comment->document?->title,
+            'doc_type' => $comment->document?->type ?? 'md',
+            'content' => $comment->content,
+            // 只在评论正文里定位片段
+            'snippet' => $this->buildSnippet($comment->content, '', $query),
+            'user' => [
+                'id' => $comment->user?->id,
+                'name' => $comment->user?->name,
+            ],
+            'created_at' => $comment->created_at?->toIso8601String(),
+        ])->values()->all();
     }
 
     /**

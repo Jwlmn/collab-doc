@@ -51,6 +51,13 @@ export const router = createRouter({
       meta: { requiresAuth: true, title: `接受邀请 · ${PAGE_TITLE}` },
     },
     {
+      // 公开只读分享：不设 requiresAuth，访客无需登录即可打开
+      path: '/share/:token',
+      name: 'share',
+      component: () => import('../views/ShareView.vue'),
+      meta: { title: `只读分享 · ${PAGE_TITLE}` },
+    },
+    {
       path: '/',
       component: () => import('../layouts/DefaultLayout.vue'),
       children: [

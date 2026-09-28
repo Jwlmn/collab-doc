@@ -9,6 +9,7 @@ use App\Http\Controllers\Api\DocumentVersionController;
 use App\Http\Controllers\Api\ImageController;
 use App\Http\Controllers\Api\InviteController;
 use App\Http\Controllers\Api\NotificationController;
+use App\Http\Controllers\Api\ShareLinkController;
 use App\Http\Controllers\Api\UserController;
 use Illuminate\Support\Facades\Route;
 
@@ -19,6 +20,11 @@ Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:10
 Route::get('/images/{filename}', [ImageController::class, 'show'])
     ->where('filename', '[0-9a-f\-]+\.[a-z]+')
     ->middleware('throttle:120,1');
+
+// 公开只读分享：GET-only（免 CSRF），失败一律 404 而非 401 ——
+// 401 会让前端 request.ts 跳登录，把分享页劫持走
+Route::get('/share/{token}', [ShareLinkController::class, 'resolve'])->middleware('throttle:30,1');
+Route::get('/share/{token}/collab-token', [ShareLinkController::class, 'collabToken'])->middleware('throttle:10,1');
 
 Route::middleware('auth:sanctum')->group(function () {
     Route::post('/images', [ImageController::class, 'store'])->middleware('throttle:30,1');
@@ -44,6 +50,9 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::apiResource('documents', DocumentController::class);
     Route::post('/documents/{document}/collab-token', CollabTokenController::class);
     Route::post('/documents/{document}/invite-link', [InviteController::class, 'link']);
+    // 公开只读分享链接（创建 / 撤销），仅所有者
+    Route::post('/documents/{document}/share-link', [ShareLinkController::class, 'link']);
+    Route::delete('/documents/{document}/share-link', [ShareLinkController::class, 'revoke']);
     // 令牌在路径中，无法用 {document} 绑定，放在 scopeBindings 之外
     Route::post('/invite/{token}', [InviteController::class, 'accept']);
 

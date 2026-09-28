@@ -184,19 +184,80 @@ const linkFallback = ref('')
 const linkFallbackVisible = ref(false)
 
 /** P2-4：生成邀请链接并复制到剪贴板 */
+/* ---------------- 公开只读分享链接 ---------------- */
+
+const shareExpiry = ref<number | null>(null)   // null = 永不过期
+const shareLink = ref('')                       // 已签发的完整 URL（会话内保留）
+const shareExpiresAt = ref<string | null>(null)
+const creatingShare = ref(false)
+const revokingShare = ref(false)
+
+const shareExpiryOptions = [
+  { label: '永不过期', value: null as number | null },
+  { label: '1 天', value: 1 },
+  { label: '7 天', value: 7 },
+  { label: '30 天', value: 30 },
+]
+
+/** 生成（或按新有效期重新签发）公开只读链接 */
+async function createShareLink(): Promise<void> {
+  creatingShare.value = true
+  try {
+    const body: Record<string, unknown> = {}
+    if (shareExpiry.value !== null) body.expires_in_days = shareExpiry.value
+
+    const { data } = await api.post(`/documents/${props.documentId}/share-link`, body)
+    shareLink.value = window.location.origin + data.data.path
+    shareExpiresAt.value = data.data.expires_at ?? null
+    await copyToClipboard(shareLink.value, '公开只读链接已复制（任何人可查看，无需登录）')
+  } catch (error) {
+    message.error(getApiErrorMessage(error))
+  } finally {
+    creatingShare.value = false
+  }
+}
+
+/** 撤销该文档全部公开链接 */
+async function revokeShareLink(): Promise<void> {
+  revokingShare.value = true
+  try {
+    await api.delete(`/documents/${props.documentId}/share-link`)
+    shareLink.value = ''
+    shareExpiresAt.value = null
+    message.success('公开链接已撤销，旧链接立即失效')
+  } catch (error) {
+    message.error(getApiErrorMessage(error))
+  } finally {
+    revokingShare.value = false
+  }
+}
+
+/** 剪贴板写入，失败降级为手动复制弹窗 */
+async function copyToClipboard(url: string, successText: string): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(url)
+    message.success(successText)
+  } catch {
+    message.warning('自动复制失败，请长按/手动选择下方链接复制')
+    linkFallback.value = url
+    linkFallbackVisible.value = true
+  }
+}
+
+async function copyShareLink(): Promise<void> {
+  if (!shareLink.value) return
+  await copyToClipboard(shareLink.value, '链接已复制')
+}
+
 async function copyInviteLink(): Promise<void> {
   copyingInvite.value = true
   try {
     const { data } = await api.post(`/documents/${props.documentId}/invite-link`)
     const url = window.location.origin + data.data.path
     try {
-      await navigator.clipboard.writeText(url)
-      message.success('邀请链接已复制（受邀者默认只读）')
+      await copyToClipboard(url, '邀请链接已复制（受邀者默认只读）')
     } catch {
-      message.warning('自动复制失败，请长按/手动选择下方链接复制')
-      // 复制失败时把链接交给用户手动选择
-      linkFallback.value = url
-      linkFallbackVisible.value = true
+      /* copyToClipboard 内部已处理降级，这里只兜异常 */
     }
   } catch (error) {
     message.error(getApiErrorMessage(error))
@@ -267,6 +328,48 @@ async function copyInviteLink(): Promise<void> {
       🔗 复制邀请链接（受邀者默认只读）
     </n-button>
 
+    <div class="public-share">
+      <n-divider title placement="left" style="margin: 8px 0 12px">公开链接</n-divider>
+      <n-text depth="3" style="font-size: 12px; display: block; margin-bottom: 8px">
+        任何人拿到链接即可只读查看，无需登录；撤销后旧链接立即失效。
+      </n-text>
+
+      <div class="public-share-row">
+        <n-select
+          v-model:value="shareExpiry"
+          :options="shareExpiryOptions"
+          size="small"
+          aria-label="链接有效期"
+          style="width: 130px"
+        />
+        <n-button type="primary" size="small" :loading="creatingShare" @click="createShareLink">
+          {{ shareLink ? '重新签发' : '生成链接' }}
+        </n-button>
+      </div>
+
+      <div v-if="shareLink" class="public-share-link">
+        <n-input
+          :value="shareLink"
+          readonly
+          size="small"
+          aria-label="公开分享链接"
+          @focus="($event.target as HTMLInputElement).select()"
+        />
+        <n-space size="small" style="margin-top: 8px">
+          <n-button size="small" quaternary @click="copyShareLink">复制</n-button>
+          <n-popconfirm @positive-click="revokeShareLink">
+            <template #trigger>
+              <n-button size="small" type="error" quaternary :loading="revokingShare">撤销</n-button>
+            </template>
+            撤销后该文档所有公开链接立即失效，确定吗？
+          </n-popconfirm>
+        </n-space>
+        <n-text v-if="shareExpiresAt" depth="3" style="font-size: 12px; display: block; margin-top: 6px">
+          有效期至 {{ new Date(shareExpiresAt).toLocaleString() }}
+        </n-text>
+      </div>
+    </div>
+
     <n-spin :show="loading">
       <n-empty
         v-if="!loading && members.length === 0"
@@ -327,6 +430,16 @@ async function copyInviteLink(): Promise<void> {
 </template>
 
 <style scoped>
+.public-share-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.public-share-link {
+  margin-top: 10px;
+}
+
 .invite-row {
   display: flex;
   gap: 8px;

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Document;
 use App\Models\DocumentMember;
+use App\Support\HmacToken;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -17,13 +18,7 @@ class InviteController extends Controller
     {
         $this->authorize('manage', $document);
 
-        $payload = (string) $document->id;
-        $encoded = self::base64UrlEncode($payload);
-        $signature = self::base64UrlEncode(
-            hash_hmac('sha256', 'invite:'.$encoded, config('collab.secret'), true)
-        );
-
-        $token = $encoded.'.'.$signature;
+        $token = HmacToken::issue('invite', (string) $document->id);
 
         return response()->json([
             'data' => [
@@ -81,32 +76,12 @@ class InviteController extends Controller
      */
     private static function verifyToken(string $token): ?int
     {
-        $parts = explode('.', $token);
+        $decoded = HmacToken::verify('invite', $token);
 
-        if (count($parts) !== 2) {
-            return null;
-        }
-
-        [$encoded, $signature] = $parts;
-        $expected = self::base64UrlEncode(
-            hash_hmac('sha256', 'invite:'.$encoded, config('collab.secret'), true)
-        );
-
-        if (! hash_equals($expected, $signature)) {
-            return null;
-        }
-
-        $decoded = base64_decode(strtr($encoded, '-_', '+/'), true);
-
-        if ($decoded === false || ! ctype_digit($decoded)) {
+        if ($decoded === null || ! ctype_digit($decoded)) {
             return null;
         }
 
         return (int) $decoded;
-    }
-
-    private static function base64UrlEncode(string $value): string
-    {
-        return rtrim(strtr(base64_encode($value), '+/', '-_'), '=');
     }
 }

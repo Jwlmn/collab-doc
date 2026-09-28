@@ -9,7 +9,8 @@ export default defineConfig({
   testDir: './e2e',
   timeout: 60_000,
   expect: { timeout: 10_000 },
-  retries: 0,
+  // CI 上给一次重试吸收调度抖动；本机保持 0（问题应立刻暴露）
+  retries: process.env.CI ? 1 : 0,
   workers: 1,
   reporter: [['list']],
   use: {
