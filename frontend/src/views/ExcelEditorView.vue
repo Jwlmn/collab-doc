@@ -18,6 +18,7 @@ import {
   type CellStyle,
   type CfOp,
   type CfRule,
+  type MergeRange,
   type SheetMeta,
 } from '../io/sheet-model'
 import { useAutoSnapshot } from '../composables/useAutoSnapshot'
@@ -204,33 +205,46 @@ function rowHeightOf(r: number): number {
 
 let resizeOrigin = 0
 let resizeStart = 0
+/** 正在拖拽的 pointer id：多点触控时只认起手那根（触屏拖手柄的关键） */
+let resizePointerId = -1
 
-function startColResize(c: number, event: MouseEvent): void {
-  if (isReadonly.value || event.button !== 0) return
+function startColResize(c: number, event: PointerEvent): void {
+  if (isReadonly.value || event.button !== 0 || !event.isPrimary) return
   event.preventDefault()
   event.stopPropagation()
   resizeStart = event.clientX
   resizeOrigin = colWidthOf(c)
   resizePreview.value = { kind: 'col', index: c, px: resizeOrigin }
+  resizePointerId = event.pointerId
   dragging.value = false
 }
 
-function startRowResize(r: number, event: MouseEvent): void {
-  if (isReadonly.value || event.button !== 0) return
+function startRowResize(r: number, event: PointerEvent): void {
+  if (isReadonly.value || event.button !== 0 || !event.isPrimary) return
   event.preventDefault()
   event.stopPropagation()
   resizeStart = event.clientY
   resizeOrigin = rowHeightOf(r)
   resizePreview.value = { kind: 'row', index: r, px: resizeOrigin }
+  resizePointerId = event.pointerId
   dragging.value = false
 }
 
-function handleResizeMove(event: MouseEvent): void {
+function handleResizeMove(event: PointerEvent): void {
   const target = resizePreview.value
-  if (!target) return
+  if (!target || event.pointerId !== resizePointerId) return
   const delta = (target.kind === 'col' ? event.clientX : event.clientY) - resizeStart
   const min = target.kind === 'col' ? 24 : 16
   resizePreview.value = { ...target, px: Math.max(min, resizeOrigin + delta) }
+}
+
+/** pointerup / pointercancel 统一结算（touch 没有可靠的 mouseup 序列） */
+function handlePointerMoveForResize(event: PointerEvent): void {
+  if (resizePreview.value) handleResizeMove(event)
+}
+
+function handlePointerEnd(event: PointerEvent): void {
+  if (resizePreview.value && event.pointerId === resizePointerId) handleResizeEnd()
 }
 
 /** 松手：把预览值落到模型（一次性写入，协同只广播一次） */
@@ -265,12 +279,79 @@ const anchor = ref({ r: 0, c: 0 })
 const focus = ref({ r: 0, c: 0 })
 const dragging = ref(false)
 
-const range = computed(() => ({
-  r1: Math.min(anchor.value.r, focus.value.r),
-  r2: Math.max(anchor.value.r, focus.value.r),
-  c1: Math.min(anchor.value.c, focus.value.c),
-  c2: Math.max(anchor.value.c, focus.value.c),
-}))
+/* ---------------- 合并单元格 ---------------- */
+
+/** 全部合并区域（merges 子表变更经 observe 冒泡 → dataRevision 失效） */
+const merges = computed<MergeRange[]>(() => {
+  void dataRevision.value
+  return model?.getMerges() ?? []
+})
+
+/**
+ * 合并索引：covered = 被吞掉不渲染的格，anchors = 锚点格 → 区域。
+ * 渲染循环逐格查表 O(1)，避免每 td 遍历全部 merges。
+ */
+const mergeIndex = computed(() => {
+  const covered = new Set<string>()
+  const anchors = new Map<string, MergeRange>()
+  for (const m of merges.value) {
+    anchors.set(`${m.r1},${m.c1}`, m)
+    for (let r = m.r1; r <= m.r2; r++) {
+      for (let c = m.c1; c <= m.c2; c++) {
+        if (r === m.r1 && c === m.c1) continue
+        covered.add(`${r},${c}`)
+      }
+    }
+  }
+  return { covered, anchors }
+})
+
+/** 该格是否被合并吞掉（不渲染 td，由锚点 rowspan/colspan 覆盖） */
+function isCoveredCell(r: number, c: number): boolean {
+  return mergeIndex.value.covered.has(`${r},${c}`)
+}
+
+/** 锚点格上的合并区域；非锚点/未合并返回 null */
+function mergeAnchorAt(r: number, c: number): MergeRange | null {
+  return mergeIndex.value.anchors.get(`${r},${c}`) ?? null
+}
+
+function mergeRowspan(r: number, c: number): number | undefined {
+  const m = mergeAnchorAt(r, c)
+  return m ? m.r2 - m.r1 + 1 : undefined
+}
+
+function mergeColspan(r: number, c: number): number | undefined {
+  const m = mergeAnchorAt(r, c)
+  return m ? m.c2 - m.c1 + 1 : undefined
+}
+
+/** 把任意格吸附到所在合并的锚点（焦点始终落在有 td 的格上） */
+function snapToAnchor(r: number, c: number): { r: number; c: number } {
+  const m = model?.getMergeAt(r, c)
+  return m ? { r: m.r1, c: m.c1 } : { r, c }
+}
+
+/**
+ * 选区 = 原始 anchor/focus 经合并区域扩张后的可视范围：
+ * 点中/框到合并的任意部分 → 整块高亮，样式也整块生效（Excel 语义）。
+ * 合并两两不相交，单遍扩张即收敛。
+ */
+const range = computed(() => {
+  let r1 = Math.min(anchor.value.r, focus.value.r)
+  let r2 = Math.max(anchor.value.r, focus.value.r)
+  let c1 = Math.min(anchor.value.c, focus.value.c)
+  let c2 = Math.max(anchor.value.c, focus.value.c)
+  for (const m of merges.value) {
+    if (r1 <= m.r2 && m.r1 <= r2 && c1 <= m.c2 && m.c1 <= c2) {
+      r1 = Math.min(r1, m.r1)
+      r2 = Math.max(r2, m.r2)
+      c1 = Math.min(c1, m.c1)
+      c2 = Math.max(c2, m.c2)
+    }
+  }
+  return { r1, r2, c1, c2 }
+})
 
 const editing = ref<{ r: number; c: number } | null>(null)
 const draft = ref('')
@@ -554,8 +635,10 @@ function selectCell(r: number, c: number, extend = false): void {
   if (editing.value && (editing.value.r !== r || editing.value.c !== c)) {
     commitEdit()
   }
-  if (!extend) anchor.value = { r, c }
-  focus.value = { r, c }
+  // 命中合并区（如搜索跳转）→ 吸附锚点，整块选中由 range 扩张完成
+  const target = snapToAnchor(r, c)
+  if (!extend) anchor.value = { ...target }
+  focus.value = { ...target }
   broadcastCell()
 }
 
@@ -575,11 +658,14 @@ function handleCellMouseDown(r: number, c: number, event: MouseEvent): void {
   dragMoved.value = false
 
   selectCell(r, c, event.shiftKey)
-  if (!event.shiftKey) {
-    dragging.value = true
-  } else {
+  if (event.shiftKey) {
     pressedCell.value = null // shift 点击只扩选，不进入编辑
+  } else if (lastPointerType !== 'touch') {
+    dragging.value = true // mouse：按住拖动框选
   }
+  // touch：dragging 不置位 → 拖动交给浏览器原生滚动，pressedCell 保留
+  // （pointerup 后的 mouseup 走「点按直接进入编辑」路径）；
+  // 触屏扩选走右下角填充柄（touch-action:none）
 }
 
 function handleCellMouseEnter(r: number, c: number): void {
@@ -633,6 +719,8 @@ function nextFocus(): void {
     input.focus()
     const end = input.value.length
     input.setSelectionRange(end, end)
+    // 触屏：编辑框可能落在视口/键盘遮挡区外，nearest 只在不可见时滚（桌面无感）
+    input.scrollIntoView({ block: 'nearest', inline: 'nearest' })
   }, 0)
 }
 
@@ -653,8 +741,29 @@ function cancelEdit(): void {
 }
 
 function moveFocus(dRow: number, dCol: number, extend = false): void {
-  const r = Math.min(Math.max(focus.value.r + dRow, 0), Math.max(displayRows.value - 1, 0))
-  const c = Math.min(Math.max(focus.value.c + dCol, 0), displayCols.value - 1)
+  let r: number
+  let c: number
+
+  const start = model?.getMergeAt(focus.value.r, focus.value.c)
+  if (start) {
+    // 已在合并区内：沿移动方向一步跨出整块（否则会在覆盖格间原地打转）
+    r = dRow > 0 ? start.r2 + 1 : dRow < 0 ? start.r1 - 1 : focus.value.r
+    c = dCol > 0 ? start.c2 + 1 : dCol < 0 ? start.c1 - 1 : focus.value.c
+  } else {
+    r = focus.value.r + dRow
+    c = focus.value.c + dCol
+  }
+
+  r = Math.min(Math.max(r, 0), Math.max(displayRows.value - 1, 0))
+  c = Math.min(Math.max(c, 0), displayCols.value - 1)
+
+  // 落入合并区（外部进入 / 跨出后紧邻另一合并）→ 吸附其锚点
+  const landed = model?.getMergeAt(r, c)
+  if (landed) {
+    r = landed.r1
+    c = landed.c1
+  }
+
   if (!extend) anchor.value = { r, c }
   focus.value = { r, c }
   broadcastCell()
@@ -804,6 +913,107 @@ const selectionBold = computed(() => {
   }
   return model.rowCount > 0
 })
+
+/* ---------------- 合并单元格操作 ---------------- */
+
+/** 选区与已有合并相交（按钮激活态；选区落在合并内时点击 = 取消合并） */
+const selectionMerged = computed(() => {
+  void dataRevision.value
+  const rg = range.value
+  return model?.intersectsMerge(rg.r1, rg.c1, rg.r2, rg.c2) ?? false
+})
+
+/** 单格且未合并 → 合并无从谈起，按钮禁用 */
+const mergeActionDisabled = computed(() => {
+  const rg = range.value
+  return isReadonly.value || (!selectionMerged.value && rg.r1 === rg.r2 && rg.c1 === rg.c2)
+})
+
+function toggleMergeSelection(): void {
+  if (!model || isReadonly.value) return
+  const rg = range.value
+  // range 已经合并扩张：选区恰等于某合并 → toggle 取消它；否则合并（吞掉相交旧合并）
+  model.transact(() => {
+    model!.toggleMerge(rg)
+  })
+  // observe → dataRevision 自动 bump，重渲染与快照通知走既有管线
+}
+
+/* ---------------- 填充柄（选区右下角拖拽扩选，触屏扩选唯一入口） ---------------- */
+
+/** 滚动/尺寸变化会移动填充柄的 DOM 位置，用 tick 失效重新测量 */
+const fillTick = ref(0)
+
+function onGridScroll(): void {
+  fillTick.value++
+}
+
+/** 填充柄锚在选区右下角格的外缘；测量走真实 rect（行列尺寸可变 + 表头偏移） */
+const fillHandlePos = computed<{ top: number; left: number } | null>(() => {
+  void fillTick.value
+  void dataRevision.value
+  void range.value
+  const wrap = gridWrapRef.value
+  if (!wrap) return null
+
+  const rg = range.value
+  // 右下角格可能被合并吞掉 → 找覆盖它的锚点 td（range 已整块扩张，
+  // 被覆盖说明该合并的右下角恰好就是 rg 的右下角）
+  let el = wrap.querySelector<HTMLElement>(`td[data-r="${rg.r2}"][data-c="${rg.c2}"]`)
+  if (!el) {
+    const m = mergeAnchorAt(rg.r2, rg.c2)
+    if (m) el = wrap.querySelector<HTMLElement>(`td[data-r="${m.r1}"][data-c="${m.c1}"]`)
+  }
+  if (!el) return null
+
+  const wr = wrap.getBoundingClientRect()
+  const cr = el.getBoundingClientRect()
+  return {
+    // 半压在右下角边线上（Excel 样式），减 4 让柄心对准角点
+    top: cr.bottom - wr.top + wrap.scrollTop - 4,
+    left: cr.right - wr.left + wrap.scrollLeft - 4,
+  }
+})
+
+let fillDragging = false
+
+function startFillDrag(event: PointerEvent): void {
+  if (event.button !== 0 || !event.isPrimary) return
+  event.preventDefault()
+  // 柄自身 touch-action:none（CSS），捕获后 touchmove 全部落到柄上，不触发页面滚动
+  ;(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId)
+  fillDragging = true
+}
+
+function handleFillMove(event: PointerEvent): void {
+  if (!fillDragging || !event.isPrimary) return
+  const el = document.elementFromPoint(event.clientX, event.clientY)?.closest('td[data-r]')
+  if (!el) return
+  const r = Number(el.getAttribute('data-r'))
+  const c = Number(el.getAttribute('data-c'))
+  if (!Number.isFinite(r) || !Number.isFinite(c)) return
+  const snap = snapToAnchor(r, c)
+  if (focus.value.r !== snap.r || focus.value.c !== snap.c) {
+    focus.value = snap // anchor 固定，focus 拖到哪扩到哪（合并整块参与）
+    dragMoved.value = true
+  }
+}
+
+function endFillDrag(): void {
+  if (!fillDragging) return
+  fillDragging = false
+  broadcastCell()
+}
+
+/* ---------------- 虚拟键盘避让 ---------------- */
+
+/** 键盘弹起会遮住编辑框：visualViewport 收缩时把编辑框重新居中可见 */
+function handleViewportResize(): void {
+  if (!editing.value) return
+  document
+    .querySelector<HTMLInputElement>('input.cell-editor')
+    ?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+}
 
 /* ---------------- 行列操作 ---------------- */
 
@@ -1002,8 +1212,12 @@ function handleKeydown(event: KeyboardEvent): void {
 onMounted(async () => {
   window.addEventListener('keydown', handleKeydown)
   window.addEventListener('mouseup', handleGlobalMouseUp)
-  window.addEventListener('mousemove', handleResizeMove)
+  // resize / 触屏拖拽走 pointer 事件（一套同时覆盖 mouse + touch + pen）
+  window.addEventListener('pointermove', handlePointerMoveForResize)
+  window.addEventListener('pointerup', handlePointerEnd)
+  window.addEventListener('pointercancel', handlePointerEnd)
   window.addEventListener('pointerdown', handlePointerDown, true)
+  window.visualViewport?.addEventListener('resize', handleViewportResize)
 
   try {
     if (isShare.value) {
@@ -1208,8 +1422,11 @@ function jumpToFind(): void {
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', handleKeydown)
   window.removeEventListener('mouseup', handleGlobalMouseUp)
-  window.removeEventListener('mousemove', handleResizeMove)
+  window.removeEventListener('pointermove', handlePointerMoveForResize)
+  window.removeEventListener('pointerup', handlePointerEnd)
+  window.removeEventListener('pointercancel', handlePointerEnd)
   window.removeEventListener('pointerdown', handlePointerDown, true)
+  window.visualViewport?.removeEventListener('resize', handleViewportResize)
   coverObserver?.disconnect()
   coverObserver = null
   stopObserve?.()
@@ -1381,6 +1598,22 @@ onBeforeUnmount(() => {
         <n-button size="tiny" quaternary :disabled="isReadonly" aria-label="居中对齐" @click="applyStyleToSelection({ al: 'center' })">中</n-button>
         <n-button size="tiny" quaternary :disabled="isReadonly" aria-label="右对齐" @click="applyStyleToSelection({ al: 'right' })">右</n-button>
 
+        <n-tooltip trigger="hover">
+          <template #trigger>
+            <n-button
+              size="tiny"
+              quaternary
+              :type="selectionMerged ? 'primary' : 'default'"
+              :disabled="mergeActionDisabled"
+              aria-label="合并单元格（选区含已有合并时为取消合并）"
+              @click="toggleMergeSelection"
+            >
+              合并
+            </n-button>
+          </template>
+          {{ selectionMerged ? '取消合并' : '合并选区单元格' }}
+        </n-tooltip>
+
         <n-divider vertical />
 
         <n-popover trigger="click" placement="bottom" v-model:show="cfVisible">
@@ -1499,6 +1732,7 @@ onBeforeUnmount(() => {
         role="region"
         aria-label="表格编辑区（可滚动）"
         @keydown="handleGridKeydown"
+        @scroll="onGridScroll"
       >
         <table
           class="sheet-grid"
@@ -1536,7 +1770,7 @@ onBeforeUnmount(() => {
                   class="resize-handle col-resize"
                   :aria-hidden="true"
                   title="拖动调整列宽，双击恢复默认"
-                  @mousedown="startColResize(c, $event)"
+                  @pointerdown="startColResize(c, $event)"
                   @dblclick.stop.prevent="resetColWidth(c)"
                 />
               </th>
@@ -1560,43 +1794,62 @@ onBeforeUnmount(() => {
                   class="resize-handle row-resize"
                   :aria-hidden="true"
                   title="拖动调整行高，双击恢复默认"
-                  @mousedown="startRowResize(r - 1, $event)"
+                  @pointerdown="startRowResize(r - 1, $event)"
                   @dblclick.stop.prevent="resetRowHeight(r - 1)"
                 />
               </th>
-              <td
-                v-for="c in displayCols"
-                :key="`cell-${r - 1}-${c - 1}`"
-                role="gridcell"
-                :aria-selected="isSelected(r - 1, c - 1)"
-                :aria-label="`${columnLabel(c - 1)}${r} ${displayValue(r - 1, c - 1)}`"
-                :class="{
-                  selected: isSelected(r - 1, c - 1),
-                  focus: isFocus(r - 1, c - 1),
-                  editing: isEditing(r - 1, c - 1),
-                }"
-                :style="{ ...cellCssStyle(r - 1, c - 1), ...remoteCursorStyle(r - 1, c - 1) }"
-                :data-remote-name="remoteCursorAt(r - 1, c - 1)?.name"
-                @mousedown="handleCellMouseDown(r - 1, c - 1, $event)"
-                @dblclick="handleCellDblClick($event)"
-                @mouseenter="handleCellMouseEnter(r - 1, c - 1)"
+              <!-- 合并吞掉的格不渲染：视觉由锚点 td 的 rowspan/colspan 覆盖 -->
+              <template v-for="c in displayCols" :key="`cell-${r - 1}-${c - 1}`">
+                <td
+                  v-if="!isCoveredCell(r - 1, c - 1)"
+                  role="gridcell"
+                  :data-r="r - 1"
+                  :data-c="c - 1"
+                  :aria-selected="isSelected(r - 1, c - 1)"
+                  :aria-label="`${columnLabel(c - 1)}${r} ${displayValue(r - 1, c - 1)}`"
+                  :rowspan="mergeRowspan(r - 1, c - 1)"
+                  :colspan="mergeColspan(r - 1, c - 1)"
+                  :class="{
+                    selected: isSelected(r - 1, c - 1),
+                    focus: isFocus(r - 1, c - 1),
+                    editing: isEditing(r - 1, c - 1),
+                  }"
+                  :style="{ ...cellCssStyle(r - 1, c - 1), ...remoteCursorStyle(r - 1, c - 1) }"
+                  :data-remote-name="remoteCursorAt(r - 1, c - 1)?.name"
+                  @mousedown="handleCellMouseDown(r - 1, c - 1, $event)"
+                  @dblclick="handleCellDblClick($event)"
+                  @mouseenter="handleCellMouseEnter(r - 1, c - 1)"
 
-              >
-                <input
-                  v-if="isEditing(r - 1, c - 1)"
-                  v-model="draft"
-                  class="cell-editor"
-                  name="cell-editor"
-                  id="cell-editor"
-                  aria-label="单元格内容"
-                  @keydown="handleEditKeydown"
-                  @blur="commitEdit"
-                />
-                <template v-else>{{ displayValue(r - 1, c - 1) }}</template>
-              </td>
+                >
+                  <input
+                    v-if="isEditing(r - 1, c - 1)"
+                    v-model="draft"
+                    class="cell-editor"
+                    name="cell-editor"
+                    id="cell-editor"
+                    aria-label="单元格内容"
+                    @keydown="handleEditKeydown"
+                    @blur="commitEdit"
+                  />
+                  <template v-else>{{ displayValue(r - 1, c - 1) }}</template>
+                </td>
+              </template>
             </tr>
           </tbody>
         </table>
+
+        <!-- 选区右下角填充柄：拖拽扩展选区（触屏扩选唯一入口，touch-action:none） -->
+        <button
+          v-if="fillHandlePos && ready"
+          type="button"
+          class="fill-handle"
+          :style="{ top: `${fillHandlePos.top}px`, left: `${fillHandlePos.left}px` }"
+          aria-label="拖动扩展选区"
+          @pointerdown="startFillDrag"
+          @pointermove="handleFillMove"
+          @pointerup="endFillDrag"
+          @pointercancel="endFillDrag"
+        />
       </div>
     </div>
 
@@ -1724,6 +1977,8 @@ onBeforeUnmount(() => {
   min-height: 0;
   overflow: auto;
   cursor: cell;
+  /* 填充柄的绝对定位锚点（滚动时随手柄随内容走） */
+  position: relative;
 }
 .grid-wrap:focus-visible {
   outline: 2px solid #2080f0;
@@ -1813,10 +2068,12 @@ onBeforeUnmount(() => {
   text-align: center;
   width: 48px;
 }
-/* 表头边缘缩放手柄：平时透明，悬停表头才显现 */
+/* 表头边缘缩放手柄：平时透明，悬停表头才显现。
+   touch-action:none —— 触屏按住手柄拖动调尺寸，不被当成页面滚动 */
 .sheet-grid .resize-handle {
   position: absolute;
   background: transparent;
+  touch-action: none;
 }
 .sheet-grid .col-resize {
   top: 0;
@@ -1838,6 +2095,35 @@ onBeforeUnmount(() => {
 .sheet-grid .row-head:hover .resize-handle,
 .sheet-grid .resize-handle:hover {
   background: rgba(32, 128, 240, 0.35);
+}
+/* 触屏无 hover：手柄常显半透明，否则用户不知道可以拖 */
+@media (hover: none) {
+  .sheet-grid .resize-handle {
+    background: rgba(32, 128, 240, 0.18);
+  }
+}
+
+/* 选区填充柄（Excel 同款绿色小方块） */
+.fill-handle {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  padding: 0;
+  border: 1.5px solid #fff;
+  background: #18a058;
+  border-radius: 2px;
+  cursor: crosshair;
+  z-index: 6;
+  /* 触屏拖柄 = 扩选而非滚动（关键：手势在 pointerdown 时就被系统读走） */
+  touch-action: none;
+  /* 扩大触点：8px 视觉 + 透明热区 */
+  box-shadow: 0 0 0 4px transparent;
+}
+.fill-handle::after {
+  /* 透明点击热区补到 ~20px，手指好按 */
+  content: '';
+  position: absolute;
+  inset: -8px;
 }
 /* 拖拽中关闭选中与图片拖影，避免误触拖拽选区 */
 .sheet-grid.resizing,

@@ -40,11 +40,20 @@ export interface CfRule {
   style: CellStyle
 }
 
-/** 快照里的 meta 段（尺寸 + 条件格式），旧快照无此字段则保持现状 */
+/** 合并单元格区域（含四角，r1/c1 为左上锚点） */
+export interface MergeRange {
+  r1: number
+  c1: number
+  r2: number
+  c2: number
+}
+
+/** 快照里的 meta 段（尺寸 + 条件格式 + 合并），旧快照无此字段则保持现状 */
 export interface SheetMeta {
   colWidths?: Record<string, number>
   rowHeights?: Record<string, number>
   cfRules?: Record<string, CfRule>
+  merges?: Record<string, MergeRange>
 }
 
 export type CellValue = string | SheetCell
@@ -61,6 +70,36 @@ export function colLabelToIndex(label: string): number {
     n = n * 26 + (ch.charCodeAt(0) - 64)
   }
   return n - 1
+}
+
+/** 合并区域归一化（r1<=r2, c1<=c2） */
+function normalizeRange(r: { r1: number; c1: number; r2: number; c2: number }): MergeRange {
+  return {
+    r1: Math.min(r.r1, r.r2),
+    r2: Math.max(r.r1, r.r2),
+    c1: Math.min(r.c1, r.c2),
+    c2: Math.max(r.c1, r.c2),
+  }
+}
+
+/** 合并区域的存储键：左上锚点 `r1,c1` */
+function mergeKey(r: MergeRange): string {
+  return `${r.r1},${r.c1}`
+}
+
+/** 两矩形区域是否相交（含边界） */
+function rangesOverlap(a: MergeRange, b: MergeRange): boolean {
+  return a.r1 <= b.r2 && b.r1 <= a.r2 && a.c1 <= b.c2 && b.c1 <= a.c2
+}
+
+/** 协同中间态防御：接受平面对象且四角为非负整数、区域非退化 */
+function isMergeRange(v: unknown): v is MergeRange {
+  if (!v || typeof v !== 'object') return false
+  const m = v as Record<string, unknown>
+  const nums = [m.r1, m.c1, m.r2, m.c2]
+  if (!nums.every((n) => typeof n === 'number' && Number.isInteger(n) && n >= 0)) return false
+  const r = m as unknown as MergeRange
+  return r.r1 <= r.r2 && r.c1 <= r.c2
 }
 
 export class SheetModel {
@@ -86,13 +125,13 @@ export class SheetModel {
   }
 
   /** 读取嵌套 meta 子表；不存在返回 null（读路径不产生副作用） */
-  private readMetaMap(key: 'colWidths' | 'rowHeights' | 'cfRules'): Y.Map<unknown> | null {
+  private readMetaMap(key: 'colWidths' | 'rowHeights' | 'cfRules' | 'merges'): Y.Map<unknown> | null {
     const v = this.meta.get(key)
     return v instanceof Y.Map ? v : null
   }
 
   /** 取嵌套 meta 子表，不存在则创建（写路径专用） */
-  private ensureMetaMap(key: 'colWidths' | 'rowHeights' | 'cfRules'): Y.Map<unknown> {
+  private ensureMetaMap(key: 'colWidths' | 'rowHeights' | 'cfRules' | 'merges'): Y.Map<unknown> {
     const existing = this.meta.get(key)
     if (existing instanceof Y.Map) return existing
     const created = new Y.Map<unknown>()
@@ -212,11 +251,13 @@ export class SheetModel {
     const index = Math.min(Math.max(at, 0), this.rows.length)
     this.rows.insert(index, [new Y.Map<CellValue>()])
     this.shiftRowHeights(index, 1)
+    this.shiftMerges('row', index, 1)
   }
 
   deleteRow(at: number): void {
     if (at < 0 || at >= this.rows.length) return
     this.shiftRowHeights(at, -1)
+    this.shiftMerges('row', at, -1)
     if (this.rows.length <= 1) {
       // 至少保留一行：清空该行而非删除
       this.rows.get(0)?.clear()
@@ -228,6 +269,7 @@ export class SheetModel {
   insertCol(at: number): void {
     const index = Math.max(at, 0)
     this.shiftColWidths(index, 1)
+    this.shiftMerges('col', index, 1)
     this.rows.forEach((row) => {
       const entries: Array<[number, CellValue]> = []
       row.forEach((v, k) => entries.push([Number(k), v]))
@@ -242,6 +284,7 @@ export class SheetModel {
 
   deleteCol(at: number): void {
     this.shiftColWidths(at, -1)
+    this.shiftMerges('col', at, -1)
     this.rows.forEach((row) => {
       const entries: Array<[number, CellValue]> = []
       row.forEach((v, k) => entries.push([Number(k), v]))
@@ -329,6 +372,162 @@ export class SheetModel {
     this.readMetaMap('cfRules')?.delete(id)
   }
 
+  /* ---------------------------------------------------------------- */
+  /*  合并单元格                                                        */
+  /* ---------------------------------------------------------------- */
+
+  /** 全部合并区域（锚点键 `r1,c1` 升序不稳定输出，调用方勿依赖顺序） */
+  getMerges(): MergeRange[] {
+    const out: MergeRange[] = []
+    this.readMetaMap('merges')?.forEach((v, k) => {
+      if (isMergeRange(v) && mergeKey(v) === k) out.push(v)
+    })
+    return out
+  }
+
+  /** 单元格所在的合并区域；未合并返回 null */
+  getMergeAt(row: number, col: number): MergeRange | null {
+    return (
+      this.getMerges().find(
+        (m) => row >= m.r1 && row <= m.r2 && col >= m.c1 && col <= m.c2,
+      ) ?? null
+    )
+  }
+
+  /** 选区是否与某个合并区域相交（工具栏按钮状态用） */
+  intersectsMerge(r1: number, c1: number, r2: number, c2: number): boolean {
+    return this.getMerges().some((m) => rangesOverlap(m, { r1, c1, r2, c2 }))
+  }
+
+  /**
+   * 合并区域（锚点 `r1,c1`，区域自动归一化为 r1<=r2, c1<=c2）：
+   * - 与旧合并相交的先移除（Excel 语义：新合并吞掉旧合并）
+   * - 除锚点外的区域内容清空（Excel「仅保留左上角值」），样式保留
+   * - 1×1 归一化后等价于取消合并
+   * 返回生效的合并（1×1 时返回 null）
+   */
+  setMerge(range: MergeRange): MergeRange | null {
+    const r = normalizeRange(range)
+    if (r.r1 === r.r2 && r.c1 === r.c2) {
+      this.unmergeOverlapping(r)
+      return null
+    }
+    const merges = this.ensureMetaMap('merges')
+    this.removeIntersecting(merges, r)
+    merges.set(mergeKey(r), r)
+
+    // 仅锚点保留内容，被覆盖格清值留样式（稀疏键：无样式则删键）
+    for (let rr = r.r1; rr <= r.r2; rr++) {
+      for (let cc = r.c1; cc <= r.c2; cc++) {
+        if (rr === r.r1 && cc === r.c1) continue
+        const prev = this.getCell(rr, cc)
+        if (prev === undefined) continue
+        if (typeof prev === 'string') {
+          this.setCell(rr, cc, '')
+        } else {
+          const { v: _v, ...style } = prev
+          this.overwriteCellStyle(rr, cc, style)
+        }
+      }
+    }
+    return r
+  }
+
+  /** 取消与区域相交的所有合并（选区在合并内时的「取消合并」） */
+  unmergeOverlapping(range: { r1: number; c1: number; r2: number; c2: number }): void {
+    const merges = this.readMetaMap('merges')
+    if (!merges || merges.size === 0) return
+    this.removeIntersecting(merges, normalizeRange(range))
+  }
+
+  /** 按选区切换：选区完全落在单个合并内 → 取消它；否则执行合并 */
+  toggleMerge(range: { r1: number; c1: number; r2: number; c2: number }): MergeRange | null {
+    const r = normalizeRange(range)
+    const existing = this.getMergeAt(r.r1, r.c1)
+    if (
+      existing &&
+      existing.r1 === r.r1 &&
+      existing.c1 === r.c1 &&
+      existing.r2 === r.r2 &&
+      existing.c2 === r.c2
+    ) {
+      this.unmergeOverlapping(r)
+      return null
+    }
+    return this.setMerge(r)
+  }
+
+  private removeIntersecting(merges: Y.Map<unknown>, r: MergeRange): void {
+    const doomed: string[] = []
+    merges.forEach((v, k) => {
+      if (isMergeRange(v) && rangesOverlap(v, r)) doomed.push(k)
+    })
+    for (const k of doomed) merges.delete(k)
+  }
+
+  /** 用纯样式对象整体覆盖单元格样式（setCell 的样式分支不够表达「保样式清值」） */
+  private overwriteCellStyle(row: number, col: number, style: CellStyle): void {
+    const map = this.ensureRow(row)
+    if (!map) return
+    const key = String(col)
+    if (Object.keys(style).length === 0) map.delete(key)
+    else map.set(key, { v: '', ...style })
+  }
+
+  /**
+   * 行/列插入删除后的合并区间平移。
+   * 语义与 Excel 一致：区间「包含」被插位置则扩张，被删位置则收缩，
+   * 区间整体在后方则平移；收缩到退化（r1>r2 或 c1>c2）则移除。
+   */
+  private shiftMerges(axis: 'row' | 'col', at: number, delta: number): void {
+    const merges = this.readMetaMap('merges')
+    if (!merges || merges.size === 0) return
+
+    const entries: Array<[string, MergeRange]> = []
+    merges.forEach((v, k) => {
+      if (isMergeRange(v)) entries.push([k, v])
+    })
+
+    for (const [key, m] of entries) {
+      const r = normalizeRange(m)
+      let { r1, r2, c1, c2 } = r
+      if (axis === 'row') {
+        if (delta > 0) {
+          if (r2 >= at) {
+            if (r1 >= at) r1 += 1
+            r2 += 1
+          }
+        } else if (r1 > at) {
+          r1 -= 1
+          r2 -= 1
+        } else if (r2 >= at) {
+          // at 落在 [r1, r2] 内：收缩；单行合并退化 → 下方校验删除
+          r2 -= 1
+        }
+      } else {
+        if (delta > 0) {
+          if (c2 >= at) {
+            if (c1 >= at) c1 += 1
+            c2 += 1
+          }
+        } else if (c1 > at) {
+          c1 -= 1
+          c2 -= 1
+        } else if (c2 >= at) {
+          c2 -= 1
+        }
+      }
+      if (r1 > r2 || c1 > c2) {
+        merges.delete(key)
+        continue
+      }
+      const next: MergeRange = { r1, c1, r2, c2 }
+      const nextKey = mergeKey(next)
+      if (nextKey !== key) merges.delete(key) // 锚点行/列变了才需要换键
+      merges.set(nextKey, next) // 键相同时也要写回：扩张/收缩只改 r2/c2
+    }
+  }
+
   /**
    * 列位移时平移列宽键。
    * 与 insertCol/deleteCol 重排行内 key 是同一套语义 —— 列级并发操作
@@ -389,15 +588,20 @@ export class SheetModel {
     }
   }
 
-  /** 快照 meta 段（尺寸 + 条件格式） */
+  /** 快照 meta 段（尺寸 + 条件格式 + 合并） */
   getMetaSnapshot(): SheetMeta {
     const meta: SheetMeta = {}
     const widths = this.getColWidths()
     const heights = this.getRowHeights()
     const rules = this.getCfRules()
+    const merges = this.getMerges()
     if (Object.keys(widths).length > 0) meta.colWidths = widths
     if (Object.keys(heights).length > 0) meta.rowHeights = heights
     if (Object.keys(rules).length > 0) meta.cfRules = rules
+    if (merges.length > 0) {
+      meta.merges = {}
+      for (const m of merges) meta.merges[mergeKey(m)] = m
+    }
     return meta
   }
 
@@ -419,6 +623,13 @@ export class SheetModel {
         const m = this.ensureMetaMap('cfRules')
         m.forEach((_v, k) => m.delete(k))
         for (const [k, v] of Object.entries(meta.cfRules)) m.set(k, v)
+      }
+      if (meta.merges) {
+        const m = this.ensureMetaMap('merges')
+        m.forEach((_v, k) => m.delete(k))
+        for (const [k, v] of Object.entries(meta.merges)) {
+          if (isMergeRange(v) && mergeKey(v) === k) m.set(k, v)
+        }
       }
     })
   }

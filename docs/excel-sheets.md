@@ -107,8 +107,27 @@
 5. 大文件 Write 输出曾损坏 style 段（乱码）— 拆段重建 + tsc 兜底
 6. `seen` 栈语义、Excel 语义等核心逻辑全部有 Vitest 覆盖（70 单测）
 
-## v2 已知边界
+## 已知边界（2026-09-29 更新）
 
 - 列级并发插删 = 最后写赢（低频操作建议错峰）
-- 无单元格合并、行高列宽调整、条件格式
-- 公式函数集为最小集（无 IF/VLOOKUP 等，可按需扩展 tokenizer/函数表）
+- xlsx 导入不保留合并/样式；xlsx 导出不写合并区间（读回后合并丢失）
+- 版本 diff 只对比 grid 不对比 meta —— 仅合并变化的版本在 diff 视图里看不出来（恢复仍生效）
+
+## 单元格合并（2026-09-29）
+
+- 存储：`meta.merges` 子表，键 = 左上锚点 `"r1,c1"` → `{r1,c1,r2,c2}`，随 ydoc 持久化到 `document_states`，快照（`{grid, meta}`）自动携带
+- 语义（对齐 Excel）：仅锚点保留内容，被覆盖格清值留样式；新合并吞掉相交旧合并；1×1 合并等价取消
+- 结构操作：插行/列在区间内 → 扩张，后方 → 平移；删行/列在区间内 → 收缩，退化（r1>r2）→ 移除
+- 渲染：覆盖格不渲染 td，锚点挂 `rowspan/colspan`；选区经合并扩张（点到任意部分整块高亮）；键盘移动跨块（进块选中、再按出块）；焦点吸附锚点
+- 并发：`meta.merges` 后写赢（与列级并发同一已知边界）；嵌套 Y.Map 深度观察复用 cfRules 管线（新子表首次创建由 onMeta 补挂）
+- 覆盖：模型 10 例 Vitest + E2E `merge.spec.ts`（合并 → 刷新持久 → 取消合并）
+
+## 触屏交互（2026-09-29）
+
+- **点按**：选中并直接进入编辑（移动端无双击语义）
+- **单指拖动**：原生滚动网格（触屏不扩选 —— 与滚动手势解耦）
+- **扩选**：选区右下角填充柄（`.fill-handle`，touch-action:none + pointer capture，mouse/触屏同一路径）
+- **调行高列宽**：表头手柄改 pointerdown/move/up（touch-action:none；触屏无 hover → 手柄常显半透明）
+- **虚拟键盘**：进入编辑 scrollIntoView(nearest)，visualViewport 收缩时居中编辑框
+- 多点触控：resize/填充柄只认 primary pointer（isPrimary + pointerId 过滤）
+- 已知待验收：真机手势回归（浏览器缩放维持默认语义，未做自定义双指手势）

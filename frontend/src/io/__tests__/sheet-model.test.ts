@@ -321,3 +321,162 @@ describe('SheetModel meta', () => {
     expect(peerModel.getCfRules().x.op).toBe('gt')
   })
 })
+
+/* ------------------------------------------------------------------ */
+/*  合并单元格                                                          */
+/* ------------------------------------------------------------------ */
+
+describe('SheetModel merges', () => {
+  it('setMerge 归一化区域，仅锚点保留内容，被覆盖格清值留样式', () => {
+    const { model } = createModel()
+    model.seedRows(5)
+    model.setCell(1, 1, '标题')
+    model.setCell(1, 2, '会被清掉')
+    model.setCell(2, 1, '也会')
+    model.applyStyle(2, 1, { bg: '#eef' })
+
+    // 传入逆序坐标 → 归一化为 (1,1)-(2,2)
+    const m = model.setMerge({ r1: 2, c1: 2, r2: 1, c2: 1 })
+    expect(m).toEqual({ r1: 1, c1: 1, r2: 2, c2: 2 })
+
+    expect(model.getRaw(1, 1)).toBe('标题') // 锚点内容保留
+    expect(model.getRaw(1, 2)).toBe('')
+    expect(model.getRaw(2, 1)).toBe('') // 清值
+    expect(model.getStyle(2, 1)).toEqual({ bg: '#eef' }) // 样式保留
+    expect(model.getMerges()).toHaveLength(1)
+  })
+
+  it('getMergeAt 区域内任意格命中，未合并返回 null', () => {
+    const { model } = createModel()
+    model.seedRows(5)
+    model.setMerge({ r1: 0, c1: 0, r2: 1, c2: 2 })
+
+    expect(model.getMergeAt(0, 0)).toEqual({ r1: 0, c1: 0, r2: 1, c2: 2 })
+    expect(model.getMergeAt(1, 2)).toEqual({ r1: 0, c1: 0, r2: 1, c2: 2 })
+    expect(model.getMergeAt(2, 0)).toBeNull()
+    expect(model.intersectsMerge(1, 1, 3, 3)).toBe(true)
+    expect(model.intersectsMerge(3, 3, 4, 4)).toBe(false)
+  })
+
+  it('新合并与旧合并相交时吞掉旧的（Excel 语义）', () => {
+    const { model } = createModel()
+    model.seedRows(6)
+    model.setMerge({ r1: 0, c1: 0, r2: 1, c2: 1 }) // A1:B2
+    model.setMerge({ r1: 2, c1: 2, r2: 3, c2: 3 }) // C3:D4
+
+    model.setMerge({ r1: 1, c1: 1, r2: 3, c2: 3 }) // 与两者都相交
+    expect(model.getMerges()).toHaveLength(1)
+    expect(model.getMergeAt(0, 0)).toBeNull() // 旧 A1:B2 已被移除
+    expect(model.getMergeAt(2, 2)).toEqual({ r1: 1, c1: 1, r2: 3, c2: 3 })
+  })
+
+  it('toggleMerge：选区等于现有合并 → 取消；否则新建', () => {
+    const { model } = createModel()
+    model.seedRows(5)
+
+    expect(model.toggleMerge({ r1: 0, c1: 0, r2: 0, c2: 1 })).toEqual({
+      r1: 0, c1: 0, r2: 0, c2: 1,
+    })
+    // 整体选中该合并 → 取消
+    expect(model.toggleMerge({ r1: 0, c1: 0, r2: 0, c2: 1 })).toBeNull()
+    expect(model.getMerges()).toHaveLength(0)
+
+    // 1×1 区域等价于取消
+    model.setMerge({ r1: 2, c1: 2, r2: 3, c2: 3 })
+    expect(model.setMerge({ r1: 2, c1: 2, r2: 2, c2: 2 })).toBeNull()
+    expect(model.getMerges()).toHaveLength(0)
+  })
+
+  it('insertRow 区间内插入则扩张，后方插入则平移', () => {
+    const { model } = createModel()
+    model.seedRows(6)
+    model.setMerge({ r1: 1, c1: 0, r2: 3, c2: 0 }) // 纵向跨 1–3 行
+
+    model.insertRow(2) // 插在区间内 → 扩张
+    expect(model.getMergeAt(1, 0)).toEqual({ r1: 1, c1: 0, r2: 4, c2: 0 })
+
+    model.insertRow(0) // 插在区间前 → 整体平移
+    expect(model.getMergeAt(2, 0)).toEqual({ r1: 2, c1: 0, r2: 5, c2: 0 })
+  })
+
+  it('deleteRow 区间内收缩、整体后移平移、单行合并退化则移除', () => {
+    const { model } = createModel()
+    model.seedRows(8)
+    model.setMerge({ r1: 2, c1: 0, r2: 5, c2: 0 })
+
+    model.deleteRow(3) // 区间内 → 收缩
+    expect(model.getMergeAt(2, 0)).toEqual({ r1: 2, c1: 0, r2: 4, c2: 0 })
+
+    model.deleteRow(0) // 区间前 → 平移
+    expect(model.getMergeAt(1, 0)).toEqual({ r1: 1, c1: 0, r2: 3, c2: 0 })
+
+    // 单行横向合并所在行被删 → 移除
+    model.setMerge({ r1: 0, c1: 2, r2: 0, c2: 4 })
+    model.deleteRow(0)
+    expect(model.getMergeAt(0, 3)).toBeNull()
+  })
+
+  it('insertCol / deleteCol 平移与收缩合并区间', () => {
+    const { model } = createModel()
+    model.seedRows(3)
+    model.setMerge({ r1: 0, c1: 1, r2: 0, c2: 3 }) // 横向 B1:D1
+
+    model.insertCol(0) // 前方插入 → 平移
+    expect(model.getMergeAt(0, 2)).toEqual({ r1: 0, c1: 2, r2: 0, c2: 4 })
+
+    model.deleteCol(0) // 平移回去
+    expect(model.getMergeAt(0, 1)).toEqual({ r1: 0, c1: 1, r2: 0, c2: 3 })
+
+    model.deleteCol(2) // 区间内（原 c2=3 的第 3 列）→ 收缩
+    expect(model.getMergeAt(0, 1)).toEqual({ r1: 0, c1: 1, r2: 0, c2: 2 })
+  })
+
+  it('merges 进 meta 快照并可恢复；旧快照（无 merges）不动现状', () => {
+    const { model } = createModel()
+    model.seedRows(5)
+    model.setMerge({ r1: 0, c1: 0, r2: 1, c2: 1 })
+
+    const snap = model.getMetaSnapshot()
+    expect(snap.merges).toEqual({ '0,0': { r1: 0, c1: 0, r2: 1, c2: 1 } })
+
+    const { model: fresh } = createModel()
+    fresh.seedRows(5)
+    fresh.applyMetaSnapshot(snap)
+    expect(fresh.getMergeAt(1, 1)).toEqual({ r1: 0, c1: 0, r2: 1, c2: 1 })
+
+    // 旧快照兼容：无 merges 字段 → 现状保留
+    fresh.applyMetaSnapshot({})
+    expect(fresh.getMerges()).toHaveLength(1)
+
+    // 覆盖语义：传空 merges 对 → 清掉
+    fresh.applyMetaSnapshot({ merges: {} })
+    expect(fresh.getMerges()).toHaveLength(0)
+  })
+
+  it('merges 子表变更会触发 observe（嵌套 Y.Map 深度观察）', () => {
+    const { model } = createModel()
+    let calls = 0
+    const stop = model.observe(() => {
+      calls++
+    })
+    const before = calls
+    model.setMerge({ r1: 0, c1: 0, r2: 1, c2: 2 })
+    expect(calls).toBeGreaterThan(before)
+
+    const mid = calls
+    model.unmergeOverlapping({ r1: 0, c1: 0, r2: 1, c2: 2 })
+    expect(calls).toBeGreaterThan(mid)
+    stop()
+  })
+
+  it('merges 变更经 Y.Doc 传输后可在另一端读到', () => {
+    const { ydoc, model } = createModel()
+    model.seedRows(5)
+    model.setMerge({ r1: 1, c1: 1, r2: 2, c2: 3 })
+
+    const peer = new Y.Doc()
+    Y.applyUpdate(peer, Y.encodeStateAsUpdate(ydoc))
+    const peerModel = new SheetModel(peer)
+    expect(peerModel.getMergeAt(2, 2)).toEqual({ r1: 1, c1: 1, r2: 2, c2: 3 })
+  })
+})
