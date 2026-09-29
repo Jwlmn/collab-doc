@@ -83,6 +83,13 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    healthcheck:
+      # 与镜像 HEALTHCHECK 一致（compose 声明便于统一查看）；127.0.0.1 避免 localhost 解析到 ::1
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:1234/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
 
   web:
     build:
@@ -92,8 +99,10 @@ services:
     ports:
       - "${WEB_PORT:-8080}:80"
     depends_on:
-      - app
-      - collab
+      app:
+        condition: service_started
+      collab:
+        condition: service_healthy
     healthcheck:
       # 用 127.0.0.1 而非 localhost：busybox 会解析到 IPv6 ::1，nginx 仅监听 IPv4
       test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/up || exit 1"]

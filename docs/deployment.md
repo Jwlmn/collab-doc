@@ -57,7 +57,9 @@ docker compose -f docker-compose.prod.yml up -d --build
 curl -i http://localhost:8080/up            # Laravel 健康检查 200
 curl -i http://localhost:8080/api/user      # 401 JSON（未登录，预期）
 curl -s http://localhost:8080/ | head -5    # 前端 index.html
-docker compose -f docker-compose.prod.yml ps  # web healthcheck=healthy
+docker compose -f docker-compose.prod.yml ps  # web/collab healthcheck=healthy
+docker compose -f docker-compose.prod.yml exec collab \
+  wget -qO- http://127.0.0.1:1234/health    # collab 健康端点 → {"status":"ok"}
 ```
 
 浏览器全流程：注册/登录 → 建 MD + Excel → 双开标签协同 → 导入导出 → 搜索。
@@ -108,8 +110,12 @@ docker compose -f docker-compose.prod.yml exec app php artisan tinker  # 慎用
 | 页面 502/504 | `logs app`：fpm 是否存活、migrate 是否失败 |
 | API 419 | CSRF/Sanctum 域名：检查 `SANCTUM_STATEFUL_DOMAINS` 与访问 Host 一致 |
 | 协同连不上 | `logs collab` + 浏览器控制台；确认 `/collab` 反代与 `COLLAB_SECRET` 两端一致 |
+| collab healthcheck=unhealthy | `exec collab wget -qO- http://127.0.0.1:1234/health`；进程未起则 `logs collab`，起后 15s 内属 start_period 正常 |
 | 样式全无 | `logs web`；前端 build 是否成功（web 镜像构建阶段） |
 | 数据库迁移卡住 | `logs postgres`；`exec app php artisan migrate:status` |
+
+监控探针约定：Laravel 走 `/up`（经 web 反代），collab 走容器内 `GET http://127.0.0.1:1234/health`
+（`200 {"status":"ok"}`；端口随 `COLLAB_PORT`）。两者均已被 Docker healthcheck 覆盖。
 
 ## 与开发栈的关系
 
@@ -120,5 +126,5 @@ docker compose -f docker-compose.prod.yml exec app php artisan tinker  # 慎用
 ## 已知边界
 
 - RoadRunner/Octane 未启用（GitHub 403 未装 rr 二进制）：当前生产形态为 **php-fpm**，性能足够中小规模；后续可在镜像内换 Octane/Swoole（扩展本机已验证可编译）
-- 协作服务健康检查依赖 `logs collab`（无 HTTP 端点）；web 的 healthcheck 走 `/up` 间接覆盖主链路
+- ~~协作服务健康检查依赖 `logs collab`（无 HTTP 端点）~~ **已解决**：collab 提供 HTTP `GET /health` → `200 {"status":"ok"}`（与 WebSocket 同端口 1234），`server/Dockerfile` 与 `docker-compose.prod.yml` 均配置 healthcheck，web 启动依赖 `collab: service_healthy`
 - 多副本 app 会并发 migrate（单副本无碍；扩副本前改为 init 容器或迁移 job）

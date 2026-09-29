@@ -117,6 +117,15 @@ function isExcelDoc(doc: Y.Doc): boolean {
 const server = Server.configure({
   port: PORT,
   name: 'collab-doc-server',
+  // HTTP 健康检查（与 WebSocket 同端口共存）：GET /health → 200 {"status":"ok"}
+  // 命中后拒绝 Promise 以终止 onRequest 链，并跳过 HocusPocus 默认的 "OK" 响应
+  async onRequest({ request, response }) {
+    if ((request.url ?? '').split('?')[0] !== '/health') return
+
+    response.writeHead(200, { 'Content-Type': 'application/json' })
+    response.end(JSON.stringify({ status: 'ok' }))
+    return Promise.reject()
+  },
   // 配置 onAuthenticate 后服务器自动要求所有连接完成认证
   async onAuthenticate({ token, documentName, connection }) {
     const claims = verifyCollabToken(token ?? '', documentName)
