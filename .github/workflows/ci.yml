@@ -93,13 +93,12 @@ jobs:
       SANCTUM_STATEFUL_DOMAINS: localhost,localhost:5173,127.0.0.1,127.0.0.1:5173,127.0.0.1:8000
       # php artisan serve 单线程：collab.spec 双页面会并发打 API
       PHP_CLI_SERVER_WORKERS: "4"
-      # 防代理劫持 localhost（症状：connection refused / 神秘超时）
+      # 防代理劫持 localhost（症状：connection refused / 神秘超时）。
+      # 注意：workflow env 键不区分大小写，写小写副本会触发
+      # "Duplicate variable definitions" 校验失败（整个 run 零 Job 秒挂）
       HTTP_PROXY: ""
       HTTPS_PROXY: ""
-      http_proxy: ""
-      https_proxy: ""
       NO_PROXY: localhost,127.0.0.1
-      no_proxy: localhost,127.0.0.1
       CI: "true"
     steps:
       - uses: actions/checkout@v4
