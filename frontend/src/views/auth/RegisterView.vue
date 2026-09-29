@@ -38,15 +38,17 @@ async function handleSubmit() {
           {{ errorMessage }}
         </n-alert>
         <n-form-item label="昵称" required>
-          <n-input v-model:value="form.name" name="name" placeholder="你的昵称" />
+          <n-input v-model:value="form.name" name="name" id="name" aria-label="昵称" placeholder="你的昵称" />
         </n-form-item>
         <n-form-item label="邮箱" required>
-          <n-input v-model:value="form.email" name="email" placeholder="you@example.com" />
+          <n-input v-model:value="form.email" name="email" id="email" aria-label="邮箱" placeholder="you@example.com" />
         </n-form-item>
         <n-form-item label="密码" required>
           <n-input
             v-model:value="form.password"
             name="password"
+            id="password"
+            aria-label="密码"
             type="password"
             show-password-on="click"
             placeholder="至少 8 位"
@@ -56,6 +58,8 @@ async function handleSubmit() {
           <n-input
             v-model:value="form.password_confirmation"
             name="password_confirmation"
+            id="password_confirmation"
+            aria-label="确认密码"
             type="password"
             show-password-on="click"
             placeholder="再次输入密码"

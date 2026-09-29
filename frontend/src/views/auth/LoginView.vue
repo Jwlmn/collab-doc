@@ -35,12 +35,14 @@ async function handleSubmit() {
           {{ errorMessage }}
         </n-alert>
         <n-form-item label="邮箱" required>
-          <n-input v-model:value="form.email" name="email" placeholder="you@example.com" />
+          <n-input v-model:value="form.email" name="email" id="email" aria-label="邮箱" placeholder="you@example.com" />
         </n-form-item>
         <n-form-item label="密码" required>
           <n-input
             v-model:value="form.password"
             name="password"
+            id="password"
+            aria-label="密码"
             type="password"
             show-password-on="click"
             placeholder="请输入密码"

@@ -1429,7 +1429,7 @@ onBeforeUnmount(() => {
                 :aria-label="`背景色 ${color}`"
                 @click="cfBg = color"
               />
-              <n-checkbox v-model:checked="cfBold" size="small">加粗</n-checkbox>
+              <n-checkbox v-model:checked="cfBold" size="small" name="cf-bold" id="cf-bold">加粗</n-checkbox>
             </div>
 
             <div class="cf-row">
@@ -1586,6 +1586,9 @@ onBeforeUnmount(() => {
                   v-if="isEditing(r - 1, c - 1)"
                   v-model="draft"
                   class="cell-editor"
+                  name="cell-editor"
+                  id="cell-editor"
+                  aria-label="单元格内容"
                   @keydown="handleEditKeydown"
                   @blur="commitEdit"
                 />
