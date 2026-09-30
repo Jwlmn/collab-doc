@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# E2E 统一入口：本机与 CI 都跑这个脚本，避免两套编排漂移。
+# E2E 统一入口（本地手跑；CI 已于 2026-09-30 移除）。
 #
 # 起 Laravel + HocusPocus 两个进程，等就绪后交给 Playwright（它自己会
 # 起 Vite —— playwright.config.ts 的 webServer）。退出时清理后台进程。

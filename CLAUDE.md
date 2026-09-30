@@ -8,7 +8,7 @@
 
 **设计原则**: 安装时使用默认版本，无需手动指定版本号。
 
-**当前状态**（2026-09）：M1–M9 九大里程碑全部完成，生产 Docker 栈与 CI（含 E2E）就绪，主线四深水功能大部分落地。进度与后续计划以 [docs/roadmap.md](./docs/roadmap.md) 为准；快速上手见 [README.md](./README.md)。
+**当前状态**（2026-09）：M1–M9 九大里程碑全部完成，生产 Docker 栈就绪，主线四深水功能大部分落地。**本项目不跑 CI**（玩票性质，GitHub Actions 已于 2026-09-30 移除，测试按需本地手跑）。进度与后续计划以 [docs/roadmap.md](./docs/roadmap.md) 为准；快速上手见 [README.md](./README.md)。
 
 ## 系统架构
 

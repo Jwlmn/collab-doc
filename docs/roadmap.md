@@ -2,7 +2,8 @@
 
 > 状态：**B1 + B2 + B3 + 主线四基本全部完成**（2026-09-29）；仅剩 i18n 按需点单
 > 前情：M1–M9、打磨 18 项、导入导出、双文档类型、Excel v2 均已完成；主线四已落地：图片支持、版本进阶（快照/diff/可逆恢复）、共享进阶（公开只读分享 + 有效期 + 撤销）、Excel 进阶（公式/条件格式/行高列宽）、搜索增强、协作 UX（跟随协作者）、a11y 收尾、CI 内 E2E
-> 质量基线：**126 PHPUnit / 157 Vitest（覆盖率门槛 60/54/55/60 强制）/ Playwright E2E 8 组通过（CI 内亦跑，注册撞限流自动等窗重试）/ pint 绿 / vue-tsc 严格模式绿 / Actions v7**
+> 质量基线：**126 PHPUnit / 157 Vitest / Playwright E2E 8 组通过 / pint 绿 / vue-tsc 严格模式绿**（按需本地手跑）
+> **无 CI**：GitHub Actions 已于 2026-09-30 整体移除（玩票项目不跑 CI），覆盖率门槛/Actions 升级同批撤除
 
 ---
 
@@ -12,7 +13,7 @@
 |------|------|------|
 | 功能 | 文档/协作/权限/搜索/导入导出/双类型/表格引擎 全链路可用 | 深水功能待按需（见主线四） |
 | 版本控制 | ✅ git 已建立（Jwlmn/collab-doc，tag v0.9-feature-complete） | — |
-| 自动化 | ✅ CI 绿灯（三 job，含 compose 编排的 E2E）+ 本机 E2E 三组稳定 | a11y 存量扫尾（本轮复核中） |
+| 自动化 | ~~CI~~ 已移除（2026-09-30）；本机 E2E 八组稳定，`scripts/e2e.sh` 手跑 | — |
 | 部署 | ✅ 生产栈可交付：docker compose.prod 一键起（nginx+fpm+hocuspocus+pg/redis），本机演练全流程通过；HTTPS 待公网加 TLS 层 | — |
 | 防丢失 | ✅ 回收站（软删除 + 恢复/彻底删除 + 协作侧拒绝写入 + document_states 清理） | — |
 | 通知 | ✅ 站内通知闭环（@提及/共享触发 + 顶栏铃铛 + 未读角标 + 跳转） | — |
@@ -24,9 +25,9 @@
 ## 主线一：工程化基座（P0，一切的前提）
 
 - [x] **Git 仓库初始化 + 首次提交** ✅（2026-09-22）：远程 `git@github.com:Jwlmn/collab-doc.git`，main 分支 329 文件/43KB 行已推送，标签 `v0.9-feature-complete` 已发布；提交前完成安全审查（无 .env/vendor/node_modules/sqlite/密钥入库，328KB pack）
-- [x] **CI（GitHub Actions）** ✅（2026-09-22）：双 job 已转绿（run 1cf89f1）—— 后端 pint+phpunit（sqlite 内存 + 自动生成 APP_KEY）、前端 vue-tsc(-b 严格模式)+vitest+build；PR/push 触发
+- [x] **CI（GitHub Actions）** ✅（2026-09-22，**2026-09-30 已整体移除**，玩票项目不跑 CI）：双 job 已转绿（run 1cf89f1）—— 后端 pint+phpunit（sqlite 内存 + 自动生成 APP_KEY）、前端 vue-tsc(-b 严格模式)+vitest+build；PR/push 触发
 - [x] **Playwright E2E 冒烟** ✅（2026-09-22，本机）：三组 spec（注册→MD编辑→内容搜索 / Excel编辑→刷新持久 / 双页面实时协同），系统 Chrome 免下载，本机连跑 3 轮 3/3 稳定；`npm run test:e2e`（需 NO_PROXY=localhost 绕系统代理）
-- [x] **CI 内集成 E2E** ✅（2026-09-28）：compose 编排 pg/redis（pg_trgm 走 init 卷）+ `scripts/e2e.sh` 本机/CI 同一入口 + ci.yml 第三个 job，失败上传 trace
+- [x] **CI 内集成 E2E** ✅（2026-09-28，**随 CI 一并移除**；`scripts/e2e.sh` 保留为本地入口）：compose 编排 pg/redis（pg_trgm 走 init 卷）+ `scripts/e2e.sh` 本机/CI 同一入口 + ci.yml 第三个 job，失败上传 trace
 - [x] 存量 a11y 遗留清理 ✅（2026-09-28，A4 收尾）：17 处表单控件补 `name/id`、Excel 网格 aria 结构修正、对比度与 label-content-name 修复；Lighthouse 三页 + 移动端无障碍均 100
 
 **量级**：git+CI 约半天；E2E 骨架约 1 天

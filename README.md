@@ -69,10 +69,6 @@ docker compose -f docker-compose.prod.yml up -d --build
 ./scripts/restore-db.sh   # 恢复
 ```
 
-## CI
-
-GitHub Actions（`.github/workflows/ci.yml`）三 Job：后端 Pint + PHPUnit、前端 vue-tsc + Vitest + 构建、compose 编排下的 Playwright E2E。
-
 ## 文档索引
 
 | 文档 | 内容 |
