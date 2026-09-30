@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { h } from 'vue'
+import { computed, h } from 'vue'
 import { NButton, useMessage } from 'naive-ui'
+import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import NotificationBell from '../components/NotificationBell.vue'
@@ -9,22 +10,26 @@ import ThemeToggle from '../components/ThemeToggle.vue'
 const auth = useAuthStore()
 const router = useRouter()
 const message = useMessage()
+const { t } = useI18n()
 
 function renderLogoutLabel() {
-  return h(NButton, { text: true, type: 'error' }, { default: () => '退出登录' })
+  return h(NButton, { text: true, type: 'error' }, { default: () => t('shell.logout') })
 }
 
 async function handleLogout() {
   try {
     await auth.logout()
-    message.success('已退出登录')
+    message.success(t('shell.loggedOut'))
     await router.replace('/login')
   } catch {
-    message.error('退出失败，请重试')
+    message.error(t('shell.logoutFailed'))
   }
 }
 
-const userMenuOptions = [{ key: 'settings', label: '设置' }, { key: 'logout', label: renderLogoutLabel }]
+const userMenuOptions = computed(() => [
+  { key: 'settings', label: t('shell.settingsMenu') },
+  { key: 'logout', label: renderLogoutLabel },
+])
 
 function handleUserMenu(key: string) {
   if (key === 'logout') {
@@ -37,9 +42,9 @@ function handleUserMenu(key: string) {
 
 <template>
   <n-layout class="app-layout">
-    <a href="#main" class="skip-link">跳到主内容</a>
+    <a href="#main" class="skip-link">{{ $t('shell.skipToMain') }}</a>
     <n-layout-header bordered class="layout-header">
-      <router-link to="/" class="brand">多人实时协作文档</router-link>
+      <router-link to="/" class="brand">{{ $t('shell.appTitle') }}</router-link>
       <n-space align="center">
         <ThemeToggle />
         <template v-if="auth.user">
@@ -56,8 +61,10 @@ function handleUserMenu(key: string) {
           </n-dropdown>
         </template>
         <template v-else>
-          <n-button text @click="router.push('/login')">登录</n-button>
-          <n-button type="primary" @click="router.push('/register')">注册</n-button>
+          <n-button text @click="router.push('/login')">{{ $t('shell.login') }}</n-button>
+          <n-button type="primary" @click="router.push('/register')">
+            {{ $t('shell.register') }}
+          </n-button>
         </template>
       </n-space>
     </n-layout-header>

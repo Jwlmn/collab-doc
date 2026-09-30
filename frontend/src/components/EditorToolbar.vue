@@ -1,9 +1,12 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import type { Editor } from '@tiptap/vue-3'
 import { useDialog, useMessage } from 'naive-ui'
 import { getApiErrorMessage } from '../utils/request'
 import { uploadImage } from '../utils/upload'
+
+const { t } = useI18n()
 
 const props = defineProps<{
   editor: Editor | null
@@ -70,7 +73,7 @@ function toggleAlign(alignment: string): void {
 const TEXT_COLORS = ['#1f2329', '#d03050', '#f0883e', '#18a058', '#2080f0', '#9575cd']
 
 const colorMenuOptions = computed(() => [
-  { key: 'default', label: '默认颜色' },
+  { key: 'default', label: t('toolbar.colorDefault') },
   { type: 'divider', key: 'cd' },
   ...TEXT_COLORS.map((c) => ({ key: c, label: 'A', props: { style: `color:${c}` } })),
 ])
@@ -120,17 +123,17 @@ type TableAction =
 const tableMenuOptions = computed(() =>
   inTable.value
     ? [
-        { key: 'addRowBefore', label: '在上方插入行' },
-        { key: 'addRowAfter', label: '在下方插入行' },
-        { key: 'addColumnBefore', label: '在左侧插入列' },
-        { key: 'addColumnAfter', label: '在右侧插入列' },
+        { key: 'addRowBefore', label: t('toolbar.tableAddRowBefore') },
+        { key: 'addRowAfter', label: t('toolbar.tableAddRowAfter') },
+        { key: 'addColumnBefore', label: t('toolbar.tableAddColBefore') },
+        { key: 'addColumnAfter', label: t('toolbar.tableAddColAfter') },
         { type: 'divider', key: 'd1' },
-        { key: 'deleteRow', label: '删除当前行' },
-        { key: 'deleteColumn', label: '删除当前列' },
+        { key: 'deleteRow', label: t('toolbar.tableDeleteRow') },
+        { key: 'deleteColumn', label: t('toolbar.tableDeleteCol') },
         { type: 'divider', key: 'd2' },
-        { key: 'deleteTable', label: '删除表格', props: { style: 'color: #d03050' } },
+        { key: 'deleteTable', label: t('toolbar.tableDelete'), props: { style: 'color: #d03050' } },
       ]
-    : [{ key: 'insert', label: '插入表格（3 列 × 3 行）' }],
+    : [{ key: 'insert', label: t('toolbar.tableInsert') }],
 )
 
 /* ---------------- 图片 ---------------- */
@@ -151,7 +154,7 @@ async function handleImagePick(event: Event): Promise<void> {
   if (!file || !props.editor) return
 
   uploading.value = true
-  const hide = message.loading('图片上传中…', { duration: 0 })
+  const hide = message.loading(t('toolbar.imageUploading'), { duration: 0 })
   try {
     const { url } = await uploadImage(file)
     props.editor.chain().focus().setImage({ src: url, alt: file.name }).run()
@@ -171,10 +174,10 @@ function handleTableMenu(key: string) {
   }
   if (action === 'deleteTable') {
     dialog.warning({
-      title: '删除表格',
-      content: '确定删除当前表格吗？删除后可用 ⌘Z 撤销。',
-      positiveText: '删除',
-      negativeText: '取消',
+      title: t('toolbar.deleteTableTitle'),
+      content: t('toolbar.deleteTableContent'),
+      positiveText: t('toolbar.deleteTableConfirm'),
+      negativeText: t('common.cancel'),
       positiveButtonProps: { type: 'error' },
       onPositiveClick: () => run((c) => c.deleteTable()),
     })
@@ -185,34 +188,34 @@ function handleTableMenu(key: string) {
 </script>
 
 <template>
-  <div v-if="editor" class="fmt-toolbar" role="toolbar" aria-label="格式工具栏">
+  <div v-if="editor" class="fmt-toolbar" role="toolbar" :aria-label="$t('toolbar.aria')">
     <n-tooltip trigger="hover">
       <template #trigger>
         <n-button
           size="small"
           quaternary
-          aria-label="↶（撤销）"
+          :aria-label="$t('toolbar.undo')"
           :disabled="readonly || !canUndo"
           @click="run((c) => c.undo())"
         >
           ↶
         </n-button>
       </template>
-      撤销 (⌘Z)
+      {{ $t('toolbar.undoTip') }}
     </n-tooltip>
     <n-tooltip trigger="hover">
       <template #trigger>
         <n-button
           size="small"
           quaternary
-          aria-label="↷（重做）"
+          :aria-label="$t('toolbar.redo')"
           :disabled="readonly || !canRedo"
           @click="run((c) => c.redo())"
         >
           ↷
         </n-button>
       </template>
-      重做 (⇧⌘Z)
+      {{ $t('toolbar.redoTip') }}
     </n-tooltip>
 
     <n-divider vertical />
@@ -222,7 +225,7 @@ function handleTableMenu(key: string) {
         <n-button
           size="small"
           quaternary
-          aria-label="加粗 B"
+          :aria-label="$t('toolbar.bold')"
           :type="isActive('bold') ? 'primary' : 'default'"
           :disabled="readonly"
           @click="run((c) => c.toggleBold())"
@@ -230,14 +233,14 @@ function handleTableMenu(key: string) {
           <strong>B</strong>
         </n-button>
       </template>
-      加粗 (⌘B)
+      {{ $t('toolbar.boldTip') }}
     </n-tooltip>
     <n-tooltip trigger="hover">
       <template #trigger>
         <n-button
           size="small"
           quaternary
-          aria-label="斜体 I"
+          :aria-label="$t('toolbar.italic')"
           :type="isActive('italic') ? 'primary' : 'default'"
           :disabled="readonly"
           @click="run((c) => c.toggleItalic())"
@@ -245,14 +248,14 @@ function handleTableMenu(key: string) {
           <em>I</em>
         </n-button>
       </template>
-      斜体 (⌘I)
+      {{ $t('toolbar.italicTip') }}
     </n-tooltip>
     <n-tooltip trigger="hover">
       <template #trigger>
         <n-button
           size="small"
           quaternary
-          aria-label="~~（删除线）"
+          :aria-label="$t('toolbar.strike')"
           :type="isActive('strike') ? 'primary' : 'default'"
           :disabled="readonly"
           @click="run((c) => c.toggleStrike())"
@@ -260,7 +263,7 @@ function handleTableMenu(key: string) {
           <s>S</s>
         </n-button>
       </template>
-      删除线 (⇧⌘S)
+      {{ $t('toolbar.strikeTip') }}
     </n-tooltip>
 
     <n-divider vertical />
@@ -270,19 +273,19 @@ function handleTableMenu(key: string) {
         <n-button
           size="small"
           quaternary
-          aria-label="高亮"
+          :aria-label="$t('toolbar.highlight')"
           :type="isActive('highlight') ? 'primary' : 'default'"
           :disabled="readonly"
           @click="run((c) => c.toggleHighlight())"
         >
-          <mark>高亮</mark>
+          <mark>{{ $t('toolbar.highlight') }}</mark>
         </n-button>
       </template>
-      高亮 (⌘⇧H)
+      {{ $t('toolbar.highlightTip') }}
     </n-tooltip>
     <n-dropdown :options="colorMenuOptions" :disabled="readonly" @select="handleColorMenu">
-      <n-button size="small" quaternary :disabled="readonly" aria-label="文字色（文字颜色）">
-        文字色 ▾
+      <n-button size="small" quaternary :disabled="readonly" :aria-label="$t('toolbar.colorAria')">
+        {{ $t('toolbar.colorBtn') }}
       </n-button>
     </n-dropdown>
 
@@ -293,7 +296,7 @@ function handleTableMenu(key: string) {
         <n-button
           size="small"
           quaternary
-          :aria-label="`H${level}（标题 ${level}）`"
+          :aria-label="t('toolbar.headingAria', { level })"
           :type="isActive('heading', { level }) ? 'primary' : 'default'"
           :disabled="readonly"
           @click="run((c) => c.toggleHeading({ level: level as 1 | 2 | 3 }))"
@@ -301,7 +304,7 @@ function handleTableMenu(key: string) {
           H{{ level }}
         </n-button>
       </template>
-      标题 {{ level }}
+      {{ $t('toolbar.headingTip', { level }) }}
     </n-tooltip>
 
     <n-divider vertical />
@@ -311,30 +314,30 @@ function handleTableMenu(key: string) {
         <n-button
           size="small"
           quaternary
-          aria-label="• 列表（无序列表）"
+          :aria-label="$t('toolbar.bulletAria')"
           :type="isActive('bulletList') ? 'primary' : 'default'"
           :disabled="readonly"
           @click="run((c) => c.toggleBulletList())"
         >
-          • 列表
+          {{ $t('toolbar.bulletBtn') }}
         </n-button>
       </template>
-      无序列表
+      {{ $t('toolbar.bulletTip') }}
     </n-tooltip>
     <n-tooltip trigger="hover">
       <template #trigger>
         <n-button
           size="small"
           quaternary
-          aria-label="1. 列表（有序列表）"
+          :aria-label="$t('toolbar.orderedAria')"
           :type="isActive('orderedList') ? 'primary' : 'default'"
           :disabled="readonly"
           @click="run((c) => c.toggleOrderedList())"
         >
-          1. 列表
+          {{ $t('toolbar.orderedBtn') }}
         </n-button>
       </template>
-      有序列表
+      {{ $t('toolbar.orderedTip') }}
     </n-tooltip>
 
     <n-divider vertical />
@@ -344,12 +347,12 @@ function handleTableMenu(key: string) {
       :key="align"
       size="small"
       quaternary
-      :aria-label="align === 'left' ? '左对齐' : align === 'center' ? '居中对齐' : '右对齐'"
+      :aria-label="align === 'left' ? $t('toolbar.alignLeftAria') : align === 'center' ? $t('toolbar.alignCenterAria') : $t('toolbar.alignRightAria')"
       :type="currentAlign() === align ? 'primary' : 'default'"
       :disabled="readonly"
       @click="toggleAlign(align)"
     >
-      {{ align === 'left' ? '左' : align === 'center' ? '中' : '右' }}
+      {{ align === 'left' ? $t('toolbar.alignLeft') : align === 'center' ? $t('toolbar.alignCenter') : $t('toolbar.alignRight') }}
     </n-button>
 
     <n-divider vertical />
@@ -359,7 +362,7 @@ function handleTableMenu(key: string) {
         <n-button
           size="small"
           quaternary
-          aria-label="引用"
+          :aria-label="$t('toolbar.quoteAria')"
           :type="isActive('blockquote') ? 'primary' : 'default'"
           :disabled="readonly"
           @click="run((c) => c.toggleBlockquote())"
@@ -367,14 +370,14 @@ function handleTableMenu(key: string) {
           ❝
         </n-button>
       </template>
-      引用
+      {{ $t('toolbar.quoteTip') }}
     </n-tooltip>
     <n-tooltip trigger="hover">
       <template #trigger>
         <n-button
           size="small"
           quaternary
-          aria-label="代码块"
+          :aria-label="$t('toolbar.codeAria')"
           :type="isActive('codeBlock') ? 'primary' : 'default'"
           :disabled="readonly"
           @click="run((c) => c.toggleCodeBlock())"
@@ -382,21 +385,21 @@ function handleTableMenu(key: string) {
           {{ '</>' }}
         </n-button>
       </template>
-      代码块
+      {{ $t('toolbar.codeTip') }}
     </n-tooltip>
     <n-tooltip trigger="hover">
       <template #trigger>
         <n-button
           size="small"
           quaternary
-          aria-label="—（分割线）"
+          :aria-label="$t('toolbar.hrAria')"
           :disabled="readonly"
           @click="run((c) => c.setHorizontalRule())"
         >
           —
         </n-button>
       </template>
-      分割线
+      {{ $t('toolbar.hrTip') }}
     </n-tooltip>
 
     <n-divider vertical />
@@ -406,15 +409,15 @@ function handleTableMenu(key: string) {
         <n-button
           size="small"
           quaternary
-          aria-label="插入图片"
+          :aria-label="$t('toolbar.imageAria')"
           :disabled="readonly"
           :loading="uploading"
           @click="openImagePicker"
         >
-          图片
+          {{ $t('toolbar.imageBtn') }}
         </n-button>
       </template>
-      插入图片（支持粘贴 / 拖拽）
+      {{ $t('toolbar.imageTip') }}
     </n-tooltip>
 
     <input
@@ -434,12 +437,12 @@ function handleTableMenu(key: string) {
           :disabled="readonly"
           @select="handleTableMenu"
         >
-          <n-button size="small" quaternary :disabled="readonly" aria-label="表格">
-            表格
+          <n-button size="small" quaternary :disabled="readonly" :aria-label="$t('toolbar.tableAria')">
+            {{ $t('toolbar.tableBtn') }}
           </n-button>
         </n-dropdown>
       </template>
-      表格
+      {{ $t('toolbar.tableTip') }}
     </n-tooltip>
   </div>
 </template>

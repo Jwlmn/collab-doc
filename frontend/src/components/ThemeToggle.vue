@@ -9,8 +9,8 @@ const { isDark, toggle } = useTheme()
   <n-button
     quaternary
     circle
-    :aria-label="isDark ? '切换到浅色模式' : '切换到深色模式'"
-    :title="isDark ? '切换到浅色模式' : '切换到深色模式'"
+    :aria-label="isDark ? $t('shell.themeToggleToLight') : $t('shell.themeToggleToDark')"
+    :title="isDark ? $t('shell.themeToggleToLight') : $t('shell.themeToggleToDark')"
     @click="toggle()"
   >
     <template #icon>

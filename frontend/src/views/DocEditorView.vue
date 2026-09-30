@@ -22,6 +22,7 @@ import CommentDrawer from '../components/CommentDrawer.vue'
 import EditorToolbar from '../components/EditorToolbar.vue'
 import ShareModal from '../components/ShareModal.vue'
 import ThemeToggle from '../components/ThemeToggle.vue'
+import { useI18n } from 'vue-i18n'
 import { useImportFlowStore } from '../stores/importFlow'
 import { useAutoSnapshot } from '../composables/useAutoSnapshot'
 import { serializeMarkdown } from '../io/markdown'
@@ -41,7 +42,7 @@ interface Collaborator {
   color: string
 }
 
-const PAGE_TITLE = '多人实时协作文档'
+const { t } = useI18n()
 const importFlow = useImportFlowStore()
 
 const props = defineProps<{
@@ -99,12 +100,12 @@ async function handleExport(key: string) {
     return
   }
   const json = editor.value.getJSON()
-  const title = meta.value?.title?.trim() || '未命名文档'
+  const title = meta.value?.title?.trim() || t('editor.untitled')
   exporting.value = true
   try {
     if (key === 'md') {
       downloadText(serializeMarkdown(json), `${title}.md`, 'text/markdown')
-      message.success('已导出 Markdown')
+      message.success(t('editor.exportedMd'))
     } else if (key === 'docx') {
       const blob = await jsonToDocxBlob(json, title)
       const url = URL.createObjectURL(blob)
@@ -115,7 +116,7 @@ async function handleExport(key: string) {
       anchor.click()
       anchor.remove()
       URL.revokeObjectURL(url)
-      message.success('已导出 Word 文档')
+      message.success(t('editor.exportedDocx'))
     }
   } catch (error) {
     message.error(getApiErrorMessage(error))
@@ -124,11 +125,11 @@ async function handleExport(key: string) {
   }
 }
 
-const exportOptions = [
+const exportOptions = computed(() => [
   { key: 'md', label: 'Markdown（.md）' },
-  { key: 'docx', label: 'Word 文档（.docx）' },
-  { key: 'pdf', label: 'PDF（打印导出）' },
-]
+  { key: 'docx', label: t('editor.exportDocx') },
+  { key: 'pdf', label: t('editor.exportPdf') },
+])
 
 const editor = shallowRef<Editor | null>(null)
 let provider: HocuspocusProvider | null = null
@@ -154,8 +155,8 @@ const hasUnsynced = computed(() => {
 })
 
 const statusText = computed(() => {
-  if (connectionStatus.value === 'connecting') return '连接中…'
-  return '已断开'
+  if (connectionStatus.value === 'connecting') return t('editor.statusConnecting')
+  return t('editor.statusOffline')
 })
 
 const statusType = computed(() =>
@@ -171,7 +172,7 @@ const statusType = computed(() =>
 const avatarStackLabel = computed(() => {
   const heads = collaborators.value.slice(0, 4).map((p) => p.name.slice(0, 1)).join('')
   const extra = collaborators.value.length > 4 ? `+${collaborators.value.length - 4}` : ''
-  return `在线协作者 ${heads}${extra}`
+  return t('editor.avatarStack', { initials: heads, extra })
 })
 
 const userColor = computed(() => colorOf(auth.user?.name))
@@ -294,7 +295,7 @@ const followName = ref<string | null>(null)
 function toggleFollow(name: string): void {
   followName.value = followName.value === name ? null : name
   if (followName.value) {
-    message.info(`正在跟随 ${name}（Esc 退出）`)
+    message.info(t('editor.followStart', { name }))
     applyFollow()
   }
 }
@@ -399,7 +400,7 @@ function pickImage(target: CoreEditor): void {
 
 async function insertImageFile(target: CoreEditor, file: File): Promise<void> {
   if (isReadonly.value) return
-  const hide = message.loading('图片上传中…', { duration: 0 })
+  const hide = message.loading(t('toolbar.imageUploading'), { duration: 0 })
   try {
     const { url } = await uploadImage(file)
     target.chain().focus().setImage({ src: url, alt: file.name }).run()
@@ -442,7 +443,7 @@ onMounted(async () => {
       // 访客：meta 已由 ShareView 传入（分享端点是访客专用的，不会 401）
       if (meta.value) {
         titleEditing.value = meta.value.title
-        document.title = `${meta.value.title} · ${PAGE_TITLE}`
+        document.title = `${meta.value.title} · ${t('shell.appTitle')}`
       }
     } else {
       const { data } = await api.get(`/documents/${docId.value}`)
@@ -454,7 +455,7 @@ onMounted(async () => {
       if (!titleEl || !titleEl.contains(document.activeElement)) {
         titleEditing.value = loaded.title
       }
-      document.title = `${loaded.title} · ${PAGE_TITLE}`
+      document.title = `${loaded.title} · ${t('shell.appTitle')}`
 
       // 防呆：excel 文档误入富文本路由
       if (loaded.type === 'excel') {
@@ -474,7 +475,7 @@ onMounted(async () => {
   watch(
     () => meta.value?.title,
     (title) => {
-      document.title = title ? `${title} · ${PAGE_TITLE}` : PAGE_TITLE
+      document.title = title ? `${title} · ${t('shell.appTitle')}` : t('shell.appTitle')
     },
   )
 
@@ -573,7 +574,7 @@ onMounted(async () => {
         provider,
         user: {
           // 访客没有登录态，用「访客」占位，避免两个匿名者同名撞车
-          name: auth.user?.name ?? (isShare.value ? '访客' : '匿名'),
+          name: auth.user?.name ?? (isShare.value ? t('editor.guest') : t('editor.anonymous')),
           color: userColor.value,
         },
       }),
@@ -643,7 +644,7 @@ onBeforeUnmount(() => {
   provider = null
   ydoc = null
   setMentionContext(null)
-  document.title = PAGE_TITLE
+  document.title = t('shell.appTitle')
 })
 
 async function handleRename() {
@@ -670,36 +671,36 @@ async function handleRename() {
 
 <template>
   <div class="editor-page">
-    <a href="#main" class="skip-link">跳到正文</a>
+    <a href="#main" class="skip-link">{{ $t('editor.skipToMain') }}</a>
     <div class="editor-topbar">
       <n-space align="center" size="large">
-        <n-button quaternary aria-label="← 返回列表（返回文档列表）" @click="router.push('/')">← 返回列表</n-button>
+        <n-button quaternary :aria-label="$t('editor.backToListAria')" @click="router.push('/')">{{ $t('editor.backToList') }}</n-button>
         <n-input
           ref="titleInputRef"
           v-model:value="titleEditing"
           class="title-input"
-          placeholder="未命名文档"
+          :placeholder="$t('editor.untitled')"
           :readonly="!canRename"
-          :aria-label="canRename ? '编辑文档标题' : '文档标题（仅所有者可改）'"
+          :aria-label="canRename ? $t('editor.titleEditAria') : $t('editor.titleReadonlyAria')"
           @blur="handleRename"
           @keyup.enter="($event.target as HTMLInputElement).blur()"
          name="document-title" id="document-title" />
-        <n-tag v-if="isReadonly" size="small" type="warning" round>🔒 只读</n-tag>
+        <n-tag v-if="isReadonly" size="small" type="warning" round>{{ $t('editor.readonlyTag') }}</n-tag>
       </n-space>
       <n-space align="center" size="small" :wrap="true">
         <ThemeToggle />
-        <n-button quaternary size="small" aria-label="?（快捷键说明）" @click="helpVisible = true">?</n-button>
-        <n-button v-if="canRename" quaternary size="small" @click="shareVisible = true">共享</n-button>
+        <n-button quaternary size="small" :aria-label="$t('editor.helpAria')" @click="helpVisible = true">?</n-button>
+        <n-button v-if="canRename" quaternary size="small" @click="shareVisible = true">{{ $t('editor.shareBtn') }}</n-button>
         <n-dropdown :options="exportOptions" :disabled="exporting" @select="handleExport">
-          <n-button quaternary size="small" :loading="exporting" aria-label="导出">
-            导出 ▾
+          <n-button quaternary size="small" :loading="exporting" :aria-label="$t('editor.exportAria')">
+            {{ $t('editor.exportBtn') }}
           </n-button>
         </n-dropdown>
         <!-- 访客无权读评论/版本（接口会 401），两个入口整体隐藏 -->
         <n-badge v-if="!isShare" :value="commentBadge" :max="99" :show="commentBadge > 0">
-          <n-button quaternary size="small" @click="commentDrawerVisible = true">评论</n-button>
+          <n-button quaternary size="small" @click="commentDrawerVisible = true">{{ $t('editor.commentsBtn') }}</n-button>
         </n-badge>
-        <n-button v-if="!isShare" quaternary size="small" @click="versionDrawerVisible = true">版本历史</n-button>
+        <n-button v-if="!isShare" quaternary size="small" @click="versionDrawerVisible = true">{{ $t('editor.versionsBtn') }}</n-button>
 
         <n-popover trigger="click" placement="bottom-end">
           <template #trigger>
@@ -733,7 +734,7 @@ async function handleRename() {
             </div>
           </template>
           <n-space vertical size="small">
-            <n-text depth="3" style="font-size: 12px">在线协作者（{{ collaborators.length }}）</n-text>
+            <n-text depth="3" style="font-size: 12px">{{ $t('editor.collaboratorsOnline', { count: collaborators.length }) }}</n-text>
             <n-space
               v-for="person in collaborators"
               :key="person.name"
@@ -752,7 +753,7 @@ async function handleRename() {
                 :type="followName === person.name ? 'primary' : 'default'"
                 @click="toggleFollow(person.name)"
               >
-                {{ followName === person.name ? '跟随中' : '跟随' }}
+                {{ followName === person.name ? $t('editor.followingBtn') : $t('editor.followBtn') }}
               </n-button>
             </n-space>
           </n-space>
@@ -766,7 +767,7 @@ async function handleRename() {
           closable
           @close="followName = null"
         >
-          跟随 {{ followName }} · Esc 退出
+          {{ $t('editor.followBar', { name: followName }) }}
         </n-tag>
 
         <span role="status" aria-live="polite" class="sync-status">
@@ -774,9 +775,9 @@ async function handleRename() {
             {{ statusText }}
           </n-tag>
           <n-tag v-else-if="!synced || hasUnsynced" type="info" size="small" round>
-            同步中…
+            {{ $t('editor.syncing') }}
           </n-tag>
-          <n-tag v-else type="success" size="small" round>✓ 已同步</n-tag>
+          <n-tag v-else type="success" size="small" round>{{ $t('editor.syncedTag') }}</n-tag>
         </span>
       </n-space>
     </div>
@@ -792,17 +793,17 @@ async function handleRename() {
     <div v-else class="editor-surface">
       <!-- 打印专用标题头（屏上不显示）：顶栏被 @media print 收掉后纸面仍要标题 -->
       <div class="print-header">
-        <h1>{{ titleEditing || meta?.title || '未命名文档' }}</h1>
+        <h1>{{ titleEditing || meta?.title || $t('editor.untitled') }}</h1>
       </div>
       <EditorToolbar :editor="editor" :readonly="isReadonly" />
 
-      <div v-show="editor" ref="bubbleEl" class="bubble-menu" role="toolbar" aria-label="选中格式工具栏">
+      <div v-show="editor" ref="bubbleEl" class="bubble-menu" role="toolbar" :aria-label="$t('editor.bubbleAria')">
         <n-tooltip trigger="hover">
           <template #trigger>
             <n-button
               size="tiny"
               quaternary
-              aria-label="加粗 B"
+              :aria-label="$t('toolbar.bold')"
               :type="isActive('bold') ? 'primary' : 'default'"
               :disabled="isReadonly"
               @click="editor?.chain().focus().toggleBold().run()"
@@ -810,14 +811,14 @@ async function handleRename() {
               <strong>B</strong>
             </n-button>
           </template>
-          加粗
+          {{ $t('editor.bubbleBold') }}
         </n-tooltip>
         <n-tooltip trigger="hover">
           <template #trigger>
             <n-button
               size="tiny"
               quaternary
-              aria-label="斜体"
+              :aria-label="$t('toolbar.italic')"
               :type="isActive('italic') ? 'primary' : 'default'"
               :disabled="isReadonly"
               @click="editor?.chain().focus().toggleItalic().run()"
@@ -825,14 +826,14 @@ async function handleRename() {
               <em>I</em>
             </n-button>
           </template>
-          斜体
+          {{ $t('editor.bubbleItalic') }}
         </n-tooltip>
         <n-tooltip trigger="hover">
           <template #trigger>
             <n-button
               size="tiny"
               quaternary
-              aria-label="删除线"
+              :aria-label="$t('toolbar.strike')"
               :type="isActive('strike') ? 'primary' : 'default'"
               :disabled="isReadonly"
               @click="editor?.chain().focus().toggleStrike().run()"
@@ -840,14 +841,14 @@ async function handleRename() {
               <s>S</s>
             </n-button>
           </template>
-          删除线
+          {{ $t('editor.bubbleStrike') }}
         </n-tooltip>
         <n-tooltip trigger="hover">
           <template #trigger>
             <n-button
               size="tiny"
               quaternary
-              aria-label="插入链接"
+              :aria-label="$t('editor.bubbleLink')"
               :type="isActive('link') ? 'primary' : 'default'"
               :disabled="isReadonly"
               @click="toggleLink"
@@ -855,7 +856,7 @@ async function handleRename() {
               🔗
             </n-button>
           </template>
-          插入链接
+          {{ $t('editor.bubbleLink') }}
         </n-tooltip>
       </div>
 
@@ -886,37 +887,37 @@ async function handleRename() {
     <n-modal
       v-model:show="linkVisible"
       preset="dialog"
-      title="插入链接"
-      positive-button-text="确定"
-      negative-button-text="取消"
+      :title="$t('editor.linkDialogTitle')"
+      :positive-button-text="$t('editor.linkDialogOk')"
+      :negative-button-text="$t('common.cancel')"
       @positive-click="confirmLink"
     >
       <n-input
         v-model:value="linkUrl"
         placeholder="https://"
-        aria-label="链接地址"
+        :aria-label="$t('editor.linkUrlAria')"
         @keyup.enter="confirmLink"
        name="link-url" id="link-url" />
     </n-modal>
 
-    <n-modal v-model:show="helpVisible" preset="card" title="快捷键" style="width: 440px; max-width: 92vw">
+    <n-modal v-model:show="helpVisible" preset="card" :title="$t('editor.helpTitle')" style="width: 440px; max-width: 92vw">
       <n-table :bordered="false" :single-line="false" size="small">
         <thead>
-          <tr><th>快捷键</th><th>作用</th></tr>
+          <tr><th>{{ $t('editor.helpColKey') }}</th><th>{{ $t('editor.helpColAction') }}</th></tr>
         </thead>
         <tbody>
-          <tr><td><kbd>⌘/Ctrl + B</kbd></td><td>加粗</td></tr>
-          <tr><td><kbd>⌘/Ctrl + I</kbd></td><td>斜体</td></tr>
-          <tr><td><kbd>⌘/Ctrl + Z</kbd></td><td>撤销</td></tr>
-          <tr><td><kbd>⇧⌘/Ctrl + Z</kbd></td><td>重做</td></tr>
-          <tr><td><kbd>⌘/Ctrl + ⏎</kbd></td><td>打开评论抽屉</td></tr>
-          <tr><td><kbd>⇧⌘/Ctrl + S</kbd></td><td>删除线</td></tr>
-          <tr><td><kbd>⇧⌘/Ctrl + H</kbd></td><td>高亮</td></tr>
-          <tr><td><kbd>@</kbd></td><td>提及协作者（发送站内通知）</td></tr>
-          <tr><td><kbd>/</kbd></td><td>斜杠命令菜单（标题/列表/引用…）</td></tr>
-          <tr><td><kbd>/</kbd> 或 <kbd>⌘/Ctrl + K</kbd></td><td>聚焦搜索（文档列表页）</td></tr>
-          <tr><td><kbd>Esc</kbd></td><td>关闭弹层</td></tr>
-          <tr><td><kbd>?</kbd></td><td>打开/关闭本说明</td></tr>
+          <tr><td><kbd>⌘/Ctrl + B</kbd></td><td>{{ $t('editor.helpBold') }}</td></tr>
+          <tr><td><kbd>⌘/Ctrl + I</kbd></td><td>{{ $t('editor.helpItalic') }}</td></tr>
+          <tr><td><kbd>⌘/Ctrl + Z</kbd></td><td>{{ $t('editor.helpUndo') }}</td></tr>
+          <tr><td><kbd>⇧⌘/Ctrl + Z</kbd></td><td>{{ $t('editor.helpRedo') }}</td></tr>
+          <tr><td><kbd>⌘/Ctrl + ⏎</kbd></td><td>{{ $t('editor.helpOpenComments') }}</td></tr>
+          <tr><td><kbd>⇧⌘/Ctrl + S</kbd></td><td>{{ $t('editor.helpStrike') }}</td></tr>
+          <tr><td><kbd>⇧⌘/Ctrl + H</kbd></td><td>{{ $t('editor.helpHighlight') }}</td></tr>
+          <tr><td><kbd>@</kbd></td><td>{{ $t('editor.helpMention') }}</td></tr>
+          <tr><td><kbd>/</kbd></td><td>{{ $t('editor.helpSlash') }}</td></tr>
+          <tr><td><kbd>/</kbd> {{ $t('editor.helpOr') }} <kbd>⌘/Ctrl + K</kbd></td><td>{{ $t('editor.helpFocusSearch') }}</td></tr>
+          <tr><td><kbd>Esc</kbd></td><td>{{ $t('editor.helpCloseOverlay') }}</td></tr>
+          <tr><td><kbd>?</kbd></td><td>{{ $t('editor.helpToggleHelp') }}</td></tr>
         </tbody>
       </n-table>
     </n-modal>

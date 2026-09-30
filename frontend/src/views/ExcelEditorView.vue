@@ -8,6 +8,7 @@ import { useAuthStore } from '../stores/auth'
 import { api, getApiErrorMessage } from '../utils/request'
 import { getCollabUrl } from '../utils/collab'
 import { userColor as colorOf } from '../utils/color'
+import { useI18n } from 'vue-i18n'
 import { useImportFlowStore } from '../stores/importFlow'
 import { exportGridToXlsx, columnLabel } from '../io/cells'
 import {
@@ -40,7 +41,6 @@ interface Collaborator {
   color: string
 }
 
-const PAGE_TITLE = '多人实时协作文档'
 
 const props = defineProps<{
   /** 公开分享令牌：存在即进入访客只读模式（由 ShareView 传入） */
@@ -56,6 +56,7 @@ const route = useRoute()
 const router = useRouter()
 const message = useMessage()
 const auth = useAuthStore()
+const { t } = useI18n()
 const importFlow = useImportFlowStore()
 
 // 访客态没有 /sheet/:id 路由，文档 id 只能来自 sharedMeta
@@ -91,7 +92,7 @@ const hasUnsynced = computed(() => {
 })
 
 const statusText = computed(() =>
-  connectionStatus.value === 'connecting' ? '连接中…' : '已断开',
+  connectionStatus.value === 'connecting' ? t('editor.statusConnecting') : t('editor.statusOffline'),
 )
 const statusType = computed(() =>
   connectionStatus.value === 'connecting' ? ('warning' as const) : ('error' as const),
@@ -428,7 +429,7 @@ const followName = ref<string | null>(null)
 function toggleFollow(name: string): void {
   followName.value = followName.value === name ? null : name
   if (followName.value) {
-    message.info(`正在跟随 ${name}（Esc 退出）`)
+    message.info(t('editor.followStart', { name }))
     applyFollow()
   }
 }
@@ -584,16 +585,16 @@ const cfOp = ref<CfOp>('gt')
 const cfValue = ref('')
 const cfValue2 = ref('')
 
-const CF_OP_OPTIONS: Array<{ label: string; value: CfOp }> = [
-  { label: '大于', value: 'gt' },
-  { label: '小于', value: 'lt' },
-  { label: '大于等于', value: 'gte' },
-  { label: '小于等于', value: 'lte' },
-  { label: '等于', value: 'eq' },
-  { label: '不等于', value: 'neq' },
-  { label: '包含文本', value: 'contains' },
-  { label: '介于两者之间', value: 'between' },
-]
+const CF_OP_OPTIONS = computed<Array<{ label: string; value: CfOp }>>(() => [
+  { label: t('excel.cfOpGt'), value: 'gt' },
+  { label: t('excel.cfOpLt'), value: 'lt' },
+  { label: t('excel.cfOpGte'), value: 'gte' },
+  { label: t('excel.cfOpLte'), value: 'lte' },
+  { label: t('excel.cfOpEq'), value: 'eq' },
+  { label: t('excel.cfOpNeq'), value: 'neq' },
+  { label: t('excel.cfOpContains'), value: 'contains' },
+  { label: t('excel.cfOpBetween'), value: 'between' },
+])
 
 /** 预设高亮色（条件格式最常用的就是背景高亮） */
 const CF_COLORS = ['#e8f7ee', '#fdeceb', '#fff7e6', '#e7f1ff', '#f3e8ff', '#f4f5f7']
@@ -604,11 +605,11 @@ function applyCfRule(): void {
   if (!model || isReadonly.value) return
   const value = cfValue.value.trim()
   if (value === '') {
-    message.warning('请填写比较值')
+    message.warning(t('excel.cfValueRequired'))
     return
   }
   if (cfOp.value === 'between' && cfValue2.value.trim() === '') {
-    message.warning('介于两者之间需要填写第二个值')
+    message.warning(t('excel.cfValue2Required'))
     return
   }
 
@@ -627,7 +628,7 @@ function applyCfRule(): void {
     ...(cfOp.value === 'between' ? { value2: numericOrNull(cfValue2.value) ?? cfValue2.value } : {}),
     style,
   })
-  message.success(`已对 ${columnLabel(rg.c1)}${rg.r1 + 1}:${columnLabel(rg.c2)}${rg.r2 + 1} 应用条件格式`)
+  message.success(t('excel.cfApplied', { range: `${columnLabel(rg.c1)}${rg.r1 + 1}:${columnLabel(rg.c2)}${rg.r2 + 1}` }))
   cfVisible.value = false
 }
 
@@ -645,9 +646,9 @@ function cfRuleRange(rule: CfRule): string {
 
 /** 规则条件的人类可读描述 */
 function cfRuleLabel(rule: CfRule): string {
-  const op = CF_OP_OPTIONS.find((o) => o.value === rule.op)?.label ?? rule.op
-  if (rule.op === 'between') return `${op} ${rule.value} 与 ${rule.value2}`
-  return `${op} ${String(rule.value)}`
+  const op = CF_OP_OPTIONS.value.find((o) => o.value === rule.op)?.label ?? rule.op
+  if (rule.op === 'between') return t('excel.cfSummaryBetween', { op, value: String(rule.value), value2: String(rule.value2) })
+  return t('excel.cfSummary', { op, value: String(rule.value) })
 }
 
 function selectCell(r: number, c: number, extend = false): void {
@@ -1058,18 +1059,18 @@ function handleColMenu(key: string): void {
   dataRevision.value++
 }
 
-const rowMenuOptions = [
-  { key: 'insertAbove', label: '在上方插入行' },
-  { key: 'insertBelow', label: '在下方插入行' },
+const rowMenuOptions = computed(() => [
+  { key: 'insertAbove', label: t('toolbar.tableAddRowBefore') },
+  { key: 'insertBelow', label: t('toolbar.tableAddRowAfter') },
   { type: 'divider' as const, key: 'd1' },
-  { key: 'delete', label: '删除当前行', props: { style: 'color: #d03050' } },
-]
-const colMenuOptions = [
-  { key: 'insertLeft', label: '在左侧插入列' },
-  { key: 'insertRight', label: '在右侧插入列' },
+  { key: 'delete', label: t('toolbar.tableDeleteRow'), props: { style: 'color: #d03050' } },
+])
+const colMenuOptions = computed(() => [
+  { key: 'insertLeft', label: t('toolbar.tableAddColBefore') },
+  { key: 'insertRight', label: t('toolbar.tableAddColAfter') },
   { type: 'divider' as const, key: 'd1' },
-  { key: 'delete', label: '删除当前列', props: { style: 'color: #d03050' } },
-]
+  { key: 'delete', label: t('toolbar.tableDeleteCol'), props: { style: 'color: #d03050' } },
+])
 
 /* ---------------- 协同光标 ---------------- */
 
@@ -1124,7 +1125,7 @@ function broadcastCell(): void {
 const avatarStackLabel = computed(() => {
   const heads = collaborators.value.slice(0, 4).map((p) => p.name.slice(0, 1)).join('')
   const extra = collaborators.value.length > 4 ? `+${collaborators.value.length - 4}` : ''
-  return `在线协作者 ${heads}${extra}`
+  return t('editor.avatarStack', { initials: heads, extra })
 })
 
 const userColor = computed(() => colorOf(auth.user?.name))
@@ -1186,11 +1187,11 @@ function restoreSnapshot(grid: ReturnType<SheetModel['toGrid']>, meta?: SheetMet
 async function handleExport(): Promise<void> {
   if (exporting.value || !model) return
   exporting.value = true
-  const title = meta.value?.title?.trim() || '未命名表格'
+  const title = meta.value?.title?.trim() || t('excel.untitled')
   try {
     void dataRevision.value
     await exportGridToXlsx(model.toGrid(), title)
-    message.success('已导出 Excel 表格')
+    message.success(t('excel.exportedXlsx'))
   } catch (error) {
     message.error(getApiErrorMessage(error))
   } finally {
@@ -1243,14 +1244,14 @@ onMounted(async () => {
       // 访客：meta 已由 ShareView 传入（分享端点访客专用，不会 401）
       if (meta.value) {
         titleEditing.value = meta.value.title
-        document.title = `${meta.value.title} · ${PAGE_TITLE}`
+        document.title = `${meta.value.title} · ${t('shell.appTitle')}`
       }
     } else {
       const { data } = await api.get(`/documents/${docId.value}`)
       const loaded: DocumentMeta = data.data
       meta.value = loaded
       titleEditing.value = loaded.title
-      document.title = `${loaded.title} · ${PAGE_TITLE}`
+      document.title = `${loaded.title} · ${t('shell.appTitle')}`
 
       // 防呆：md 文档误入表格路由
       if ((loaded.type ?? 'md') === 'md') {
@@ -1270,7 +1271,7 @@ onMounted(async () => {
   watch(
     () => meta.value?.title,
     (title) => {
-      document.title = title ? `${title} · ${PAGE_TITLE}` : PAGE_TITLE
+      document.title = title ? `${title} · ${t('shell.appTitle')}` : t('shell.appTitle')
     },
   )
 
@@ -1342,7 +1343,7 @@ onMounted(async () => {
 
   // awareness：先播报用户，再跟随焦点播报单元格
   provider.awareness?.setLocalStateField('user', {
-    name: auth.user?.name ?? (isShare.value ? '访客' : '匿名'),
+    name: auth.user?.name ?? (isShare.value ? t('editor.guest') : t('editor.anonymous')),
     color: userColor.value,
   })
   provider.awareness?.on('change', () => {
@@ -1454,46 +1455,46 @@ onBeforeUnmount(() => {
   provider = null
   ydoc = null
   model = null
-  document.title = PAGE_TITLE
+  document.title = t('shell.appTitle')
 })
 </script>
 
 <template>
   <div class="sheet-page">
-    <a href="#main" class="skip-link">跳到表格</a>
+    <a href="#main" class="skip-link">{{ $t('excel.skipToMain') }}</a>
     <div class="sheet-topbar">
       <n-space align="center" size="large">
-        <n-button quaternary aria-label="← 返回列表（返回文档列表）" @click="router.push('/')">← 返回列表</n-button>
+        <n-button quaternary :aria-label="$t('editor.backToListAria')" @click="router.push('/')">{{ $t('editor.backToList') }}</n-button>
         <n-input
           ref="titleInputRef"
           v-model:value="titleEditing"
           class="title-input"
-          placeholder="未命名表格"
+          :placeholder="$t('excel.untitled')"
           :readonly="!canRename"
-          :aria-label="canRename ? '编辑表格标题' : '表格标题（仅所有者可改）'"
+          :aria-label="canRename ? $t('excel.titleEditAria') : $t('excel.titleReadonlyAria')"
           @blur="handleRename"
           @keyup.enter="($event.target as HTMLInputElement).blur()"
          name="sheet-title" id="sheet-title" />
-        <n-tag size="small" type="success" round>表格</n-tag>
-        <n-tag v-if="isReadonly" size="small" type="warning" round>🔒 只读</n-tag>
+        <n-tag size="small" type="success" round>{{ $t('excel.sheetTag') }}</n-tag>
+        <n-tag v-if="isReadonly" size="small" type="warning" round>{{ $t('editor.readonlyTag') }}</n-tag>
       </n-space>
       <n-space align="center" size="small" :wrap="true">
         <ThemeToggle />
-        <n-button quaternary size="small" aria-label="?（快捷键说明）" @click="helpVisible = true">?</n-button>
-        <n-button v-if="canRename" quaternary size="small" @click="shareVisible = true">共享</n-button>
+        <n-button quaternary size="small" :aria-label="$t('editor.helpAria')" @click="helpVisible = true">?</n-button>
+        <n-button v-if="canRename" quaternary size="small" @click="shareVisible = true">{{ $t('editor.shareBtn') }}</n-button>
         <n-button
           quaternary
           size="small"
           :loading="exporting"
-          aria-label="导出"
+          :aria-label="$t('editor.exportAria')"
           @click="handleExport"
         >
-          导出
+          {{ $t('excel.exportBtn') }}
         </n-button>
-        <n-button v-if="!isShare" quaternary size="small" @click="versionDrawerVisible = true">版本</n-button>
+        <n-button v-if="!isShare" quaternary size="small" @click="versionDrawerVisible = true">{{ $t('excel.versionsBtn') }}</n-button>
         <!-- 访客无权读评论/版本（接口会 401），两个入口整体隐藏 -->
         <n-badge v-if="!isShare" :value="unreadComments" :max="99" :show="unreadComments > 0">
-          <n-button quaternary size="small" @click="commentDrawerVisible = true">评论</n-button>
+          <n-button quaternary size="small" @click="commentDrawerVisible = true">{{ $t('editor.commentsBtn') }}</n-button>
         </n-badge>
 
         <n-popover trigger="click" placement="bottom-end">
@@ -1528,7 +1529,7 @@ onBeforeUnmount(() => {
             </div>
           </template>
           <n-space vertical size="small">
-            <n-text depth="3" style="font-size: 12px">在线协作者（{{ collaborators.length }}）</n-text>
+            <n-text depth="3" style="font-size: 12px">{{ $t('editor.collaboratorsOnline', { count: collaborators.length }) }}</n-text>
             <n-space
               v-for="person in collaborators"
               :key="person.name"
@@ -1547,7 +1548,7 @@ onBeforeUnmount(() => {
                 :type="followName === person.name ? 'primary' : 'default'"
                 @click="toggleFollow(person.name)"
               >
-                {{ followName === person.name ? '跟随中' : '跟随' }}
+                {{ followName === person.name ? $t('editor.followingBtn') : $t('editor.followBtn') }}
               </n-button>
             </n-space>
           </n-space>
@@ -1561,7 +1562,7 @@ onBeforeUnmount(() => {
           closable
           @close="followName = null"
         >
-          跟随 {{ followName }} · Esc 退出
+          {{ $t('editor.followBar', { name: followName }) }}
         </n-tag>
 
         <span role="status" aria-live="polite" class="sync-status">
@@ -1569,9 +1570,9 @@ onBeforeUnmount(() => {
             {{ statusText }}
           </n-tag>
           <n-tag v-else-if="!synced || hasUnsynced" type="info" size="small" round>
-            同步中…
+            {{ $t('editor.syncing') }}
           </n-tag>
-          <n-tag v-else type="success" size="small" round>✓ 已同步</n-tag>
+          <n-tag v-else type="success" size="small" round>{{ $t('editor.syncedTag') }}</n-tag>
         </span>
       </n-space>
     </div>
@@ -1586,37 +1587,37 @@ onBeforeUnmount(() => {
               quaternary
               :type="selectionBold ? 'primary' : 'default'"
               :disabled="isReadonly"
-              aria-label="加粗 B"
+              :aria-label="$t('toolbar.bold')"
               @click="toggleBold"
             >
               <strong>B</strong>
             </n-button>
           </template>
-          加粗
+          {{ $t('toolbar.bold') }}
         </n-tooltip>
 
         <n-dropdown :options="TEXT_COLORS.map((c) => ({ key: c, label: 'A', props: { style: `color:${c}` } }))"
           :disabled="isReadonly"
           @select="(key: string) => applyStyleToSelection({ c: key })"
         >
-          <n-button size="tiny" quaternary :disabled="isReadonly" aria-label="文字色（文字颜色）">文字色</n-button>
+          <n-button size="tiny" quaternary :disabled="isReadonly" :aria-label="$t('toolbar.colorAria')">{{ $t('excel.colorBtn') }}</n-button>
         </n-dropdown>
         <n-dropdown
           :options="[
             ...BG_COLORS.map((c) => ({ key: c, label: '　', props: { style: `background:${c}` } })),
-            { key: 'clear', label: '清除背景' },
+            { key: 'clear', label: t('excel.clearBg') },
           ]"
           :disabled="isReadonly"
           @select="(key: string) => applyStyleToSelection({ bg: key === 'clear' ? null : key })"
         >
-          <n-button size="tiny" quaternary :disabled="isReadonly" aria-label="背景色（背景颜色）">背景色</n-button>
+          <n-button size="tiny" quaternary :disabled="isReadonly" :aria-label="$t('excel.bgColorAria')">{{ $t('excel.bgColorBtn') }}</n-button>
         </n-dropdown>
 
         <n-divider vertical />
 
-        <n-button size="tiny" quaternary :disabled="isReadonly" aria-label="左对齐" @click="applyStyleToSelection({ al: 'left' })">左</n-button>
-        <n-button size="tiny" quaternary :disabled="isReadonly" aria-label="居中对齐" @click="applyStyleToSelection({ al: 'center' })">中</n-button>
-        <n-button size="tiny" quaternary :disabled="isReadonly" aria-label="右对齐" @click="applyStyleToSelection({ al: 'right' })">右</n-button>
+        <n-button size="tiny" quaternary :disabled="isReadonly" :aria-label="$t('toolbar.alignLeftAria')" @click="applyStyleToSelection({ al: 'left' })">{{ $t('toolbar.alignLeft') }}</n-button>
+        <n-button size="tiny" quaternary :disabled="isReadonly" :aria-label="$t('toolbar.alignCenterAria')" @click="applyStyleToSelection({ al: 'center' })">{{ $t('toolbar.alignCenter') }}</n-button>
+        <n-button size="tiny" quaternary :disabled="isReadonly" :aria-label="$t('toolbar.alignRightAria')" @click="applyStyleToSelection({ al: 'right' })">{{ $t('toolbar.alignRight') }}</n-button>
 
         <n-tooltip trigger="hover">
           <template #trigger>
@@ -1625,20 +1626,20 @@ onBeforeUnmount(() => {
               quaternary
               :type="selectionMerged ? 'primary' : 'default'"
               :disabled="mergeActionDisabled"
-              aria-label="合并单元格（选区含已有合并时为取消合并）"
+              :aria-label="$t('excel.mergeAria')"
               @click="toggleMergeSelection"
             >
-              合并
+              {{ $t('excel.mergeBtn') }}
             </n-button>
           </template>
-          {{ selectionMerged ? '取消合并' : '合并选区单元格' }}
+          {{ selectionMerged ? $t('excel.unmergeTip') : $t('excel.mergeTip') }}
         </n-tooltip>
 
         <n-divider vertical />
 
         <n-popover trigger="click" placement="bottom" v-model:show="cfVisible">
           <template #trigger>
-            <n-button size="tiny" quaternary :disabled="isReadonly" aria-label="条件格式">条件格式</n-button>
+            <n-button size="tiny" quaternary :disabled="isReadonly" :aria-label="$t('excel.cfAria')">{{ $t('excel.cfBtn') }}</n-button>
           </template>
 
           <div class="cf-panel">
@@ -1647,14 +1648,14 @@ onBeforeUnmount(() => {
                 v-model:value="cfOp"
                 :options="CF_OP_OPTIONS"
                 size="small"
-                aria-label="比较方式"
+                :aria-label="$t('excel.cfAria')"
                 style="width: 130px"
                name="cf-op" id="cf-op" />
               <n-input
                 v-model:value="cfValue"
                 size="small"
-                placeholder="比较值"
-                aria-label="比较值"
+                :placeholder="$t('excel.cfValue')"
+                :aria-label="$t('excel.cfValue')"
                 style="width: 110px"
                 @keyup.enter="applyCfRule"
                name="cf-value" id="cf-value" />
@@ -1662,15 +1663,15 @@ onBeforeUnmount(() => {
                 v-if="cfOp === 'between'"
                 v-model:value="cfValue2"
                 size="small"
-                placeholder="第二个值"
-                aria-label="第二个比较值"
+                :placeholder="$t('excel.cfValue2')"
+                :aria-label="$t('excel.cfValue2Aria')"
                 style="width: 110px"
                 @keyup.enter="applyCfRule"
                name="cf-value2" id="cf-value2" />
             </div>
 
             <div class="cf-row" style="align-items: center">
-              <span class="cf-label">背景</span>
+              <span class="cf-label">{{ $t('excel.backgroundLabel') }}</span>
               <span
                 v-for="color in CF_COLORS"
                 :key="color"
@@ -1679,17 +1680,17 @@ onBeforeUnmount(() => {
                 :style="{ background: color }"
                 role="radio"
                 :aria-checked="cfBg === color"
-                :aria-label="`背景色 ${color}`"
+                :aria-label="t('excel.bgSwatchAria', { color })"
                 @click="cfBg = color"
               />
-              <n-checkbox v-model:checked="cfBold" size="small" name="cf-bold" id="cf-bold">加粗</n-checkbox>
+              <n-checkbox v-model:checked="cfBold" size="small" name="cf-bold" id="cf-bold">{{ $t('excel.cfBold') }}</n-checkbox>
             </div>
 
             <div class="cf-row">
               <n-text depth="3" style="font-size: 12px">
-                应用到 {{ columnLabel(range.c1) }}{{ range.r1 + 1 }}:{{ columnLabel(range.c2) }}{{ range.r2 + 1 }}
+                {{ $t('excel.cfApplyTo', { range: `${columnLabel(range.c1)}${range.r1 + 1}:${columnLabel(range.c2)}${range.r2 + 1}` }) }}
               </n-text>
-              <n-button type="primary" size="tiny" @click="applyCfRule">应用</n-button>
+              <n-button type="primary" size="tiny" @click="applyCfRule">{{ $t('excel.cfApply') }}</n-button>
             </div>
 
             <template v-if="Object.keys(cfRules).length > 0">
@@ -1705,10 +1706,10 @@ onBeforeUnmount(() => {
                     quaternary
                     type="error"
                     :disabled="isReadonly"
-                    aria-label="删除该规则"
+                    :aria-label="$t('excel.cfDeleteRuleAria')"
                     @click="removeCfRule(String(id))"
                   >
-                    删除
+                    {{ $t('common.delete') }}
                   </n-button>
                 </div>
               </div>
@@ -1717,19 +1718,19 @@ onBeforeUnmount(() => {
         </n-popover>
 
         <n-dropdown :options="rowMenuOptions" :disabled="isReadonly" @select="handleRowMenu">
-          <n-button size="tiny" quaternary :disabled="isReadonly" aria-label="行 ▾（行操作）">行 ▾</n-button>
+          <n-button size="tiny" quaternary :disabled="isReadonly" :aria-label="$t('excel.rowMenuAria')">{{ $t('excel.rowMenuAria') }}</n-button>
         </n-dropdown>
         <n-dropdown :options="colMenuOptions" :disabled="isReadonly" @select="handleColMenu">
-          <n-button size="tiny" quaternary :disabled="isReadonly" aria-label="列 ▾（列操作）">列 ▾</n-button>
+          <n-button size="tiny" quaternary :disabled="isReadonly" :aria-label="$t('excel.colMenuAria')">{{ $t('excel.colMenuAria') }}</n-button>
         </n-dropdown>
 
         <n-divider vertical />
         <n-text depth="3" style="font-size: 12px">
-          选区 {{ columnLabel(focus.c) }}{{ focus.r + 1 }}
+          {{ $t('excel.selectionStatus', { cell: `${columnLabel(focus.c)}${focus.r + 1}` }) }}
           <template v-if="range.r1 !== range.r2 || range.c1 !== range.c2">
-            （{{ (range.r2 - range.r1 + 1) * (range.c2 - range.c1 + 1) }} 格）
+            {{ $t('excel.cellCount', { count: (range.r2 - range.r1 + 1) * (range.c2 - range.c1 + 1) }) }}
           </template>
-          · 公式以 = 开头
+          {{ $t('excel.formulaHint') }}
         </n-text>
       </n-space>
     </div>
@@ -1750,7 +1751,7 @@ onBeforeUnmount(() => {
         class="grid-wrap"
         tabindex="0"
         role="region"
-        aria-label="表格编辑区（可滚动）"
+        :aria-label="$t('excel.gridRegionAria')"
         @keydown="handleGridKeydown"
         @scroll="onGridScroll"
       >
@@ -1758,7 +1759,7 @@ onBeforeUnmount(() => {
           class="sheet-grid"
           :class="{ resizing: resizePreview !== null }"
           role="grid"
-          aria-label="表格编辑区"
+          :aria-label="$t('excel.gridAria')"
           :aria-rowcount="displayRows"
           :aria-colcount="displayCols + 1"
         >
@@ -1774,12 +1775,12 @@ onBeforeUnmount(() => {
           </colgroup>
           <thead>
             <tr>
-              <th class="corner" scope="col" aria-label="行号列" />
+              <th class="corner" scope="col" :aria-label="$t('excel.rowHeaderAria')" />
               <th
                 v-for="(label, c) in columnHeaders"
                 :key="`col-${c}`"
                 scope="col"
-                :aria-label="`第 ${c + 1} 列 ${label}`"
+                :aria-label="t('excel.colAria', { index: c + 1, label })"
                 :class="{
                   'col-active': c >= range.c1 && c <= range.c2,
                 }"
@@ -1789,7 +1790,7 @@ onBeforeUnmount(() => {
                 <span
                   class="resize-handle col-resize"
                   :aria-hidden="true"
-                  title="拖动调整列宽，双击恢复默认"
+                  :title="$t('excel.colResizeTitle')"
                   @pointerdown="startColResize(c, $event)"
                   @dblclick.stop.prevent="resetColWidth(c)"
                 />
@@ -1805,7 +1806,7 @@ onBeforeUnmount(() => {
               <th
                 class="row-head"
                 scope="row"
-                :aria-label="`第 ${r} 行`"
+                :aria-label="t('excel.rowAria', { index: r })"
                 :class="{ 'row-active': r - 1 >= range.r1 && r - 1 <= range.r2 }"
               >
                 {{ r }}
@@ -1813,7 +1814,7 @@ onBeforeUnmount(() => {
                 <span
                   class="resize-handle row-resize"
                   :aria-hidden="true"
-                  title="拖动调整行高，双击恢复默认"
+                  :title="$t('excel.rowResizeTitle')"
                   @pointerdown="startRowResize(r - 1, $event)"
                   @dblclick.stop.prevent="resetRowHeight(r - 1)"
                 />
@@ -1847,7 +1848,7 @@ onBeforeUnmount(() => {
                     class="cell-editor"
                     name="cell-editor"
                     id="cell-editor"
-                    aria-label="单元格内容"
+                    :aria-label="$t('excel.cellAria')"
                     @keydown="handleEditKeydown"
                     @blur="commitEdit"
                   />
@@ -1864,7 +1865,7 @@ onBeforeUnmount(() => {
           type="button"
           class="fill-handle"
           :style="{ top: `${fillHandlePos.top}px`, left: `${fillHandlePos.left}px` }"
-          aria-label="拖动扩展选区"
+          :aria-label="$t('excel.fillHandleAria')"
           @pointerdown="startFillDrag"
           @pointermove="handleFillMove"
           @pointerup="endFillDrag"
@@ -1892,22 +1893,22 @@ onBeforeUnmount(() => {
 
     <ShareModal v-if="!isShare" v-model:show="shareVisible" :document-id="docId" />
 
-    <n-modal v-model:show="helpVisible" preset="card" title="快捷键" style="width: 440px; max-width: 92vw">
+    <n-modal v-model:show="helpVisible" preset="card" :title="$t('editor.helpTitle')" style="width: 440px; max-width: 92vw">
       <n-text depth="3" style="display: block; margin-bottom: 12px; font-size: 13px">
-        双击单元格编辑（触屏点按编辑，支持中文输入法）· 拖动 / Shift+点按框选 · 公式示例：=A1+B2、=SUM(A1:A9)
+        {{ $t('excel.helpIntro') }}
       </n-text>
       <n-table :bordered="false" :single-line="false" size="small">
         <thead>
-          <tr><th>快捷键</th><th>作用</th></tr>
+          <tr><th>{{ $t('editor.helpColKey') }}</th><th>{{ $t('editor.helpColAction') }}</th></tr>
         </thead>
         <tbody>
-          <tr><td><kbd>方向键</kbd> / <kbd>Tab</kbd></td><td>在单元格间导航</td></tr>
-          <tr><td><kbd>Shift</kbd> + 方向键</td><td>扩展选区</td></tr>
-          <tr><td>双击 / <kbd>Enter</kbd> / <kbd>F2</kbd></td><td>编辑当前单元格</td></tr>
-          <tr><td><kbd>Enter</kbd> / <kbd>Tab</kbd>（编辑中）</td><td>确认并移至下一格</td></tr>
-          <tr><td><kbd>Esc</kbd></td><td>取消编辑 / 关闭弹层</td></tr>
-          <tr><td><kbd>⌘/Ctrl + ⏎</kbd></td><td>打开评论抽屉</td></tr>
-          <tr><td><kbd>?</kbd></td><td>打开/关闭本说明</td></tr>
+          <tr><td><kbd>{{ $t('excel.helpKeysArrows') }}</kbd> / <kbd>Tab</kbd></td><td>{{ $t('excel.helpNav') }}</td></tr>
+          <tr><td><kbd>{{ $t('excel.helpKeysShiftArrows') }}</kbd></td><td>{{ $t('excel.helpExtend') }}</td></tr>
+          <tr><td>{{ $t('excel.helpKeysEdit') }}</td><td>{{ $t('excel.helpEdit') }}</td></tr>
+          <tr><td>{{ $t('excel.helpKeysConfirm') }}</td><td>{{ $t('excel.helpConfirmNext') }}</td></tr>
+          <tr><td><kbd>Esc</kbd></td><td>{{ $t('excel.helpCancel') }}</td></tr>
+          <tr><td><kbd>⌘/Ctrl + ⏎</kbd></td><td>{{ $t('editor.helpOpenComments') }}</td></tr>
+          <tr><td><kbd>?</kbd></td><td>{{ $t('editor.helpToggleHelp') }}</td></tr>
         </tbody>
       </n-table>
     </n-modal>

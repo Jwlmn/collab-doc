@@ -12,7 +12,9 @@ import {
   type DiffLine,
 } from '../io/version-diff'
 import type { DocumentVersion } from '../types'
+import { useI18n } from 'vue-i18n'
 
+const { t } = useI18n()
 const isMobile = useIsMobile()
 
 const props = defineProps<{
@@ -82,7 +84,7 @@ async function handleSave(): Promise<void> {
       versions.value.unshift(data.data)
     }
     versionName.value = ''
-    message.success('版本已保存')
+    message.success(t('versions.saved'))
   } catch (error) {
     message.error(getApiErrorMessage(error))
   } finally {
@@ -116,7 +118,7 @@ async function backupBeforeRestore(): Promise<void> {
   if (!ed) return
   try {
     await api.post(`/documents/${props.documentId}/versions`, {
-      name: '恢复前自动保存',
+      name: t('versions.autoBackup'),
       content_json: ed.getJSON(),
       content_html: ed.getHTML(),
     })
@@ -136,7 +138,7 @@ async function restoreVersion(version: DocumentVersion): Promise<void> {
     await backupBeforeRestore()
     props.editor.commands.setContent(snapshot.content_json as unknown as JSONContent)
     emit('update:show', false)
-    message.success(`已恢复到「${snapshot.name ?? formatTime(snapshot.created_at)}」`)
+    message.success(t('versions.restored', { name: snapshot.name ?? formatTime(snapshot.created_at) }))
   } catch (error) {
     message.error(getApiErrorMessage(error))
   } finally {
@@ -170,10 +172,10 @@ function handlePreviewTab(tab: 'snapshot' | 'diff'): void {
 function handleRestore(version: DocumentVersion): void {
   if (!props.editor || props.readonly) return
   dialog.warning({
-    title: '恢复版本',
-    content: '恢复后当前未保存到版本的内容将被该快照覆盖，确定恢复吗？',
-    positiveText: '恢复',
-    negativeText: '取消',
+    title: t('versions.restoreTitle'),
+    content: t('versions.restoreContentDoc'),
+    positiveText: t('versions.restore'),
+    negativeText: t('common.cancel'),
     positiveButtonProps: { type: 'warning' },
     onPositiveClick: () => restoreVersion(version),
   })
@@ -185,7 +187,7 @@ async function handleDelete(version: DocumentVersion): Promise<void> {
   try {
     await api.delete(`/documents/${props.documentId}/versions/${version.id}`)
     versions.value = versions.value.filter((item) => item.id !== version.id)
-    message.success('版本已删除')
+    message.success(t('versions.deleted'))
   } catch (error) {
     message.error(getApiErrorMessage(error))
   } finally {
@@ -197,11 +199,11 @@ async function handleDelete(version: DocumentVersion): Promise<void> {
 
 <template>
   <n-drawer :show="show" :width="isMobile ? '100%' : 420" placement="right" @update:show="emit('update:show', $event)">
-    <n-drawer-content title="版本历史" closable>
+    <n-drawer-content :title="$t('versions.drawerTitle')" closable>
       <div class="save-box">
         <n-input
           v-model:value="versionName"
-          placeholder="版本名称（可选，如：初稿）"
+          :placeholder="$t('versions.namePlaceholderMd')"
           maxlength="200"
           @keyup.enter="handleSave"
          name="version-name" id="version-name" />
@@ -213,26 +215,26 @@ async function handleDelete(version: DocumentVersion): Promise<void> {
           style="margin-top: 8px"
           @click="handleSave"
         >
-          {{ readonly ? '只读模式无法保存版本' : '保存当前版本' }}
+          {{ readonly ? $t('versions.readonlyHint') : $t('versions.saveDoc') }}
         </n-button>
       </div>
 
       <n-spin :show="loading">
         <n-empty
           v-if="!loading && !hasContent"
-          description="暂无版本，保存后可随时恢复"
+          :description="$t('versions.empty')"
           style="margin-top: 48px"
         />
         <n-list v-else-if="versions.length > 0" class="version-list">
           <n-list-item v-for="version in versions" :key="version.id">
-            <n-thing :title="version.name || '未命名版本'">
+            <n-thing :title="version.name || $t('versions.untitled')">
               <template #description>
                 <n-space :size="6" align="center" :wrap="true">
                   <n-tag v-if="version.kind && version.kind !== 'manual'" size="tiny" round>
-                    自动
+                    {{ $t('versions.auto') }}
                   </n-tag>
                   <n-text depth="3" style="font-size: 12px">
-                    {{ version.user?.name ?? '未知用户' }} · {{ formatTime(version.created_at) }}
+                    {{ version.user?.name ?? $t('documents.unknownUser') }} · {{ formatTime(version.created_at) }}
                   </n-text>
                 </n-space>
               </template>
@@ -245,7 +247,7 @@ async function handleDelete(version: DocumentVersion): Promise<void> {
                   :loading="previewingId === version.id"
                   @click="openPreview(version)"
                 >
-                  预览
+                  {{ $t('versions.preview') }}
                 </n-button>
                 <n-button
                   size="tiny"
@@ -255,7 +257,7 @@ async function handleDelete(version: DocumentVersion): Promise<void> {
                   :loading="restoringId === version.id"
                   @click="handleRestore(version)"
                 >
-                  恢复
+                  {{ $t('versions.restore') }}
                 </n-button>
                 <n-popconfirm @positive-click="handleDelete(version)">
                   <template #trigger>
@@ -266,10 +268,10 @@ async function handleDelete(version: DocumentVersion): Promise<void> {
                       :disabled="readonly"
                       :loading="deletingId === version.id"
                     >
-                      删除
+                      {{ $t('versions.delete') }}
                     </n-button>
                   </template>
-                  确定删除该版本吗？
+                  {{ $t('versions.deleteConfirm') }}
                 </n-popconfirm>
               </n-space>
             </template>
@@ -277,13 +279,13 @@ async function handleDelete(version: DocumentVersion): Promise<void> {
         </n-list>
       </n-spin>
 
-      <n-modal v-model:show="previewVisible" preset="card" style="width: min(720px, 92vw)" :title="previewVersion?.name || '版本预览'">
+      <n-modal v-model:show="previewVisible" preset="card" style="width: min(720px, 92vw)" :title="previewVersion?.name || $t('versions.previewUntitled')">
         <n-tabs v-if="editor" type="line" :value="previewTab" @update:value="handlePreviewTab">
-          <n-tab-pane name="snapshot" tab="快照内容">
+          <n-tab-pane name="snapshot" :tab="$t('versions.tabSnapshot')">
             <div class="preview-body" v-html="previewVersion?.content_html ?? ''" />
           </n-tab-pane>
-          <n-tab-pane name="diff" tab="与当前对比">
-            <div v-if="previewDiff.length === 0" class="preview-empty">无差异</div>
+          <n-tab-pane name="diff" :tab="$t('versions.tabDiff')">
+            <div v-if="previewDiff.length === 0" class="preview-empty">{{ $t('versions.noDiff') }}</div>
             <div v-else class="preview-diff">
               <div
                 v-for="(line, index) in previewDiff"
@@ -300,14 +302,14 @@ async function handleDelete(version: DocumentVersion): Promise<void> {
         <div v-else class="preview-body" v-html="previewVersion?.content_html ?? ''" />
         <template #footer>
           <n-space justify="end">
-            <n-button @click="previewVisible = false">关闭</n-button>
+            <n-button @click="previewVisible = false">{{ $t('versions.close') }}</n-button>
             <n-button
               v-if="previewVersion && !readonly"
               type="primary"
               :loading="restoringId === previewVersion.id"
               @click="handleRestore(previewVersion); previewVisible = false"
             >
-              恢复此版本
+              {{ $t('versions.restoreThis') }}
             </n-button>
           </n-space>
         </template>

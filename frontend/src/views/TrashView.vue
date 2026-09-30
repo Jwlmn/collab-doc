@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { useDialog, useMessage } from 'naive-ui'
 import { api, getApiErrorMessage } from '../utils/request'
 import { formatTime } from '../utils/format'
+import { useI18n } from 'vue-i18n'
 import type { DocumentMeta } from '../types'
 
 type TrashDoc = DocumentMeta & { deleted_at?: string | null }
@@ -11,6 +12,7 @@ type TrashDoc = DocumentMeta & { deleted_at?: string | null }
 const message = useMessage()
 const dialog = useDialog()
 const router = useRouter()
+const { t } = useI18n()
 
 const loading = ref(true)
 const list = ref<TrashDoc[]>([])
@@ -33,7 +35,7 @@ async function handleRestore(doc: TrashDoc): Promise<void> {
   try {
     await api.post(`/documents/${doc.id}/restore`)
     list.value = list.value.filter((item) => item.id !== doc.id)
-    message.success(`已恢复「${doc.title}」`)
+    message.success(t('trash.restored', { title: doc.title }))
   } catch (error) {
     message.error(getApiErrorMessage(error))
   } finally {
@@ -43,17 +45,17 @@ async function handleRestore(doc: TrashDoc): Promise<void> {
 
 function handleForceDelete(doc: TrashDoc): void {
   dialog.warning({
-    title: '彻底删除',
-    content: `确定彻底删除「${doc.title}」吗？删除后将无法恢复。`,
-    positiveText: '彻底删除',
-    negativeText: '取消',
+    title: t('trash.purgeTitle'),
+    content: t('trash.purgeContent', { title: doc.title }),
+    positiveText: t('trash.purgeConfirm'),
+    negativeText: t('common.cancel'),
     positiveButtonProps: { type: 'error' },
     onPositiveClick: async () => {
       operatingId.value = doc.id
       try {
         await api.delete(`/documents/${doc.id}/force`)
         list.value = list.value.filter((item) => item.id !== doc.id)
-        message.success('已彻底删除')
+        message.success(t('trash.purged'))
       } catch (error) {
         message.error(getApiErrorMessage(error))
       } finally {
@@ -72,10 +74,10 @@ onMounted(() => {
   <div>
     <div class="trash-header">
       <n-space align="center">
-        <n-button size="small" quaternary @click="router.push('/')">← 返回文档</n-button>
-        <h2 style="margin: 0">回收站</h2>
+        <n-button size="small" quaternary @click="router.push('/')">{{ $t('trash.backToList') }}</n-button>
+        <h2 style="margin: 0">{{ $t('trash.heading') }}</h2>
       </n-space>
-      <n-text depth="3" style="font-size: 13px">删除的文档会保留在这里，可随时恢复</n-text>
+      <n-text depth="3" style="font-size: 13px">{{ $t('trash.hint') }}</n-text>
     </div>
 
     <template v-if="loading">
@@ -84,7 +86,7 @@ onMounted(() => {
 
     <n-empty
       v-else-if="list.length === 0"
-      description="回收站是空的"
+      :description="$t('trash.empty')"
       style="margin-top: 64px"
     />
 
@@ -110,7 +112,7 @@ onMounted(() => {
           </template>
           <template #description>
             <n-text depth="3" style="font-size: 12px">
-              删除于 {{ formatTime(doc.deleted_at) }}
+              {{ $t('trash.deletedAt', { time: formatTime(doc.deleted_at) }) }}
             </n-text>
           </template>
         </n-thing>
@@ -122,7 +124,7 @@ onMounted(() => {
               :loading="operatingId === doc.id"
               @click="handleRestore(doc)"
             >
-              恢复
+              {{ $t('trash.restore') }}
             </n-button>
             <n-button
               size="small"
@@ -131,7 +133,7 @@ onMounted(() => {
               :disabled="operatingId === doc.id"
               @click="handleForceDelete(doc)"
             >
-              彻底删除
+              {{ $t('trash.purge') }}
             </n-button>
           </n-space>
         </template>

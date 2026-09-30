@@ -1,4 +1,5 @@
 import axios, { AxiosError } from 'axios'
+import { i18n } from '../i18n'
 
 /** 后端 API 客户端（经 Vite 代理，同源 Cookie 认证） */
 export const api = axios.create({
@@ -48,5 +49,5 @@ export function getApiErrorMessage(error: unknown): string {
     }
     if (data?.message) return data.message
   }
-  return '请求失败，请稍后重试'
+  return i18n.global.t('common.requestFailed')
 }

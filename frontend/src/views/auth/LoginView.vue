@@ -29,35 +29,35 @@ async function handleSubmit() {
 
 <template>
   <div class="auth-page">
-    <n-card title="登录" class="auth-card">
+    <n-card :title="$t('auth.loginTitle')" class="auth-card">
       <n-form label-placement="top" @submit.prevent="handleSubmit">
         <n-alert v-if="errorMessage" type="error" class="auth-alert" :show-icon="true">
           {{ errorMessage }}
         </n-alert>
-        <n-form-item label="邮箱" required>
-          <n-input v-model:value="form.email" name="email" id="email" aria-label="邮箱" placeholder="you@example.com" />
+        <n-form-item :label="$t('auth.emailLabel')" required>
+          <n-input v-model:value="form.email" name="email" id="email" :aria-label="$t('auth.emailLabel')" :placeholder="$t('auth.emailPlaceholder')" />
         </n-form-item>
-        <n-form-item label="密码" required>
+        <n-form-item :label="$t('auth.passwordLabel')" required>
           <n-input
             v-model:value="form.password"
             name="password"
             id="password"
-            aria-label="密码"
+            :aria-label="$t('auth.passwordLabel')"
             type="password"
             show-password-on="click"
-            placeholder="请输入密码"
+            :placeholder="$t('auth.passwordPlaceholder')"
             @keyup.enter="handleSubmit"
           />
         </n-form-item>
         <n-form-item>
-          <n-checkbox v-model:checked="form.remember" name="remember">记住我</n-checkbox>
+          <n-checkbox v-model:checked="form.remember" name="remember">{{ $t('auth.rememberMe') }}</n-checkbox>
         </n-form-item>
         <n-button type="primary" block :loading="loading" attr-type="submit">
-          登录
+          {{ $t('auth.submitLogin') }}
         </n-button>
         <div class="auth-switch">
-          还没有账号？
-          <router-link to="/register">立即注册</router-link>
+          {{ $t('auth.noAccount') }}
+          <router-link to="/register">{{ $t('auth.toRegister') }}</router-link>
         </div>
       </n-form>
     </n-card>

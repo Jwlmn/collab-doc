@@ -1,19 +1,22 @@
 import type { JSONContent } from '@tiptap/core'
+import { i18n } from '../i18n'
 
 /**
  * 文档模板：新建时预置的 Tiptap JSON 种子内容。
  * 走 importFlow 既有管线（创建空文档 → 跳编辑器 → 协同首帧后 setContent），
  * schema 与 getBaseExtensions 同源，保证种子内容可直接编辑。
  * 节点只用 StarterKit 现有类型（待办用 `[ ]` 文本前缀而非 tasklist 扩展，
- * md 导出/导入天然往返）。
+ * md 导出/导入天然往返）。全部文案经 i18n：种子语言跟随应用语言。
  */
 
 export interface DocTemplate {
   key: string
-  /** 同时作为新文档标题 */
-  title: string
+  /** 同步取当前语言的模板标题（即新文档标题） */
+  title: () => string
   build: () => JSONContent
 }
+
+const t = (key: string): string => i18n.global.t(key)
 
 function doc(...content: JSONContent[]): JSONContent {
   return { type: 'doc', content }
@@ -46,43 +49,43 @@ function bulletList(...items: string[]): JSONContent {
 export const DOC_TEMPLATES: DocTemplate[] = [
   {
     key: 'meeting',
-    title: '会议纪要',
+    title: () => t('templates.meeting.title'),
     build: () =>
       doc(
-        paragraph('会议时间：＿＿＿＿　地点：＿＿＿＿　主持人：＿＿＿＿'),
-        heading(2, '参会人员'),
-        bulletList('（列出参会人员）'),
-        heading(2, '会议内容'),
-        paragraph('（记录讨论要点与结论）'),
-        heading(2, '决议事项'),
-        bulletList('决议一：'),
-        heading(2, '待办事项'),
-        bulletList('[ ] 待办一：负责人＿＿＿ 截止＿＿＿'),
+        paragraph(t('templates.meeting.metaLine')),
+        heading(2, t('templates.meeting.attendees')),
+        bulletList(t('templates.meeting.attendeesItem')),
+        heading(2, t('templates.meeting.content')),
+        paragraph(t('templates.meeting.contentHint')),
+        heading(2, t('templates.meeting.decisions')),
+        bulletList(t('templates.meeting.decisionItem')),
+        heading(2, t('templates.meeting.todos')),
+        bulletList(t('templates.meeting.todoItem')),
       ),
   },
   {
     key: 'weekly',
-    title: '周报',
+    title: () => t('templates.weekly.title'),
     build: () =>
       doc(
-        paragraph('汇报人：＿＿＿＿　周期：＿＿＿＿'),
-        heading(2, '本周工作'),
-        bulletList('[ ] 工作一'),
-        heading(2, '进展与数据'),
-        paragraph('（关键进展、数据指标）'),
-        heading(2, '问题与风险'),
-        bulletList('（问题描述 + 需要的支持）'),
-        heading(2, '下周计划'),
-        bulletList('[ ] 计划一'),
+        paragraph(t('templates.weekly.metaLine')),
+        heading(2, t('templates.weekly.work')),
+        bulletList(t('templates.weekly.workItem')),
+        heading(2, t('templates.weekly.progress')),
+        paragraph(t('templates.weekly.progressHint')),
+        heading(2, t('templates.weekly.issues')),
+        bulletList(t('templates.weekly.issuesItem')),
+        heading(2, t('templates.weekly.next')),
+        bulletList(t('templates.weekly.nextItem')),
       ),
   },
   {
     key: 'todo',
-    title: '待办清单',
+    title: () => t('templates.todo.title'),
     build: () =>
       doc(
-        paragraph('（完成一项勾一项：把 [ ] 改成 [x]）'),
-        bulletList('[ ] 待办一', '[ ] 待办二', '[ ] 待办三'),
+        paragraph(t('templates.todo.hint')),
+        bulletList(t('templates.todo.item1'), t('templates.todo.item2'), t('templates.todo.item3')),
       ),
   },
 ]

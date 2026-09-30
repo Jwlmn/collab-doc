@@ -10,11 +10,15 @@ const router = useRouter()
     <div class="not-found-theme-toggle">
       <ThemeToggle />
     </div>
-    <n-result status="404" title="页面不存在" description="你访问的页面不存在或已被删除">
+    <n-result
+      status="404"
+      :title="$t('notFound.title')"
+      :description="$t('notFound.description')"
+    >
       <template #footer>
         <n-space justify="center">
-          <n-button type="primary" @click="router.push('/')">回到文档列表</n-button>
-          <n-button quaternary @click="router.back()">返回上一页</n-button>
+          <n-button type="primary" @click="router.push('/')">{{ $t('notFound.goHome') }}</n-button>
+          <n-button quaternary @click="router.back()">{{ $t('notFound.goBack') }}</n-button>
         </n-space>
       </template>
     </n-result>

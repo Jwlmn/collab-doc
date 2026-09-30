@@ -11,6 +11,7 @@ import { userColor as colorOf } from '../utils/color'
 import { useIsMobile } from '../composables/useIsMobile'
 import { useImportFlowStore } from '../stores/importFlow'
 import { importFileToPayload, docTitleFromFilename } from '../io/importFile'
+import { useI18n } from 'vue-i18n'
 import { DOC_TEMPLATES, findTemplate, type DocTemplate } from '../io/templates'
 import type { DocumentMeta } from '../types'
 
@@ -25,6 +26,8 @@ function openDoc(doc: Pick<DocumentMeta, 'id' | 'type'>) {
     query,
   })
 }
+
+const { t } = useI18n()
 
 const documents = useDocumentsStore()
 const importFlow = useImportFlowStore()
@@ -65,7 +68,7 @@ async function handleImportFile(event: Event) {
     }
 
     await router.push(payload.kind === 'excel' ? `/sheet/${doc.id}` : `/doc/${doc.id}`)
-    message.success(`已导入「${title}」（${payload.kind === 'excel' ? 'Excel' : 'MD'}）`)
+    message.success(t('documents.imported', { title, kind: payload.kind === 'excel' ? 'Excel' : 'MD' }))
   } catch (error) {
     const msg = error instanceof Error ? error.message : getApiErrorMessage(error)
     message.error(msg)
@@ -118,10 +121,10 @@ watch([sortBy, viewMode], () => {
   )
 })
 
-const sortOptions = [
-  { label: '最近更新', value: 'updated' },
-  { label: '按标题', value: 'title' },
-]
+const sortOptions = computed(() => [
+  { label: t('documents.sortByUpdated'), value: 'updated' },
+  { label: t('documents.sortByTitle'), value: 'title' },
+])
 
 const sortedList = computed(() => {
   const arr = [...documents.list]
@@ -144,8 +147,8 @@ const displayGroups = computed(() => {
   if (pinned.length === 0) return [{ key: 'all', title: '', docs: all }]
   const rest = all.filter((doc) => !doc.pinned)
   return [
-    { key: 'pinned', title: '置顶', docs: pinned },
-    ...(rest.length > 0 ? [{ key: 'rest', title: '全部文档', docs: rest }] : []),
+    { key: 'pinned', title: t('documents.groupPinned'), docs: pinned },
+    ...(rest.length > 0 ? [{ key: 'rest', title: t('documents.groupAll'), docs: rest }] : []),
   ]
 })
 
@@ -156,7 +159,7 @@ async function togglePin(doc: DocumentMeta) {
   togglingPinId.value = doc.id
   try {
     const pinned = await documents.togglePin(doc)
-    message.success(pinned ? `已置顶「${doc.title}」` : `已取消置顶「${doc.title}」`)
+    message.success(pinned ? t('documents.pinnedToast', { title: doc.title }) : t('documents.unpinnedToast', { title: doc.title }))
   } catch (error) {
     message.error(getApiErrorMessage(error))
   } finally {
@@ -205,22 +208,22 @@ const TEMPLATE_ICONS: Record<string, string> = {
   todo: '✅',
 }
 
-const createMenuOptions = [
-  { key: 'md', label: '📄 MD 文档（富文本）' },
-  { key: 'excel', label: '📊 Excel 表格（电子表格）' },
+const createMenuOptions = computed(() => [
+  { key: 'md', label: t('documents.createMd') },
+  { key: 'excel', label: t('documents.createExcel') },
   { type: 'divider', key: 'd1' },
   // 模板 = 创建后经 importFlow 注入种子内容（与文件导入同一管线）
   ...DOC_TEMPLATES.map((template) => ({
     key: `tpl:${template.key}`,
-    label: `${TEMPLATE_ICONS[template.key] ?? '📄'} ${template.title}（模板）`,
+    label: `${TEMPLATE_ICONS[template.key] ?? '📄'} ${t('documents.templateMenu', { title: t(`templates.${template.key}.title`) })}`,
   })),
-]
+])
 
 /** 移动端头部收纳的「⋯」菜单（导入/回收站） */
-const moreMenuOptions = [
-  { key: 'import', label: '导入文件' },
-  { key: 'trash', label: '回收站' },
-]
+const moreMenuOptions = computed(() => [
+  { key: 'import', label: t('documents.importMenu') },
+  { key: 'trash', label: t('documents.trashMenu') },
+])
 
 function handleMoreMenu(key: string) {
   if (key === 'import') openImportPicker()
@@ -230,7 +233,7 @@ function handleMoreMenu(key: string) {
 async function handleCreate(type: 'md' | 'excel' = 'md', template?: DocTemplate) {
   creating.value = true
   try {
-    const doc = await documents.create(template?.title, type)
+    const doc = await documents.create(template?.title(), type)
     // 模板种子：走 importFlow，编辑器协同首帧后一次性写入（与文件导入同管线）
     if (template) {
       importFlow.setPending({ kind: 'md', json: template.build() })
@@ -273,7 +276,7 @@ async function handleRename() {
   try {
     await documents.rename(renameTarget.id, renameTarget.title.trim())
     renameDialogVisible.value = false
-    message.success('已重命名')
+    message.success(t('documents.renamed'))
   } catch (error) {
     message.error(getApiErrorMessage(error))
   } finally {
@@ -286,7 +289,7 @@ async function handleDelete(doc: DocumentMeta) {
     await documents.remove(doc.id)
     // 可撤销提示：直接调恢复接口（零后端改动）
     const notif = notification.success({
-      content: `已将「${doc.title}」移入回收站`,
+      content: t('documents.moveToTrash', { title: doc.title }),
       duration: 8000,
       action: () =>
         h(
@@ -300,13 +303,13 @@ async function handleDelete(doc: DocumentMeta) {
               try {
                 await api.post(`/documents/${doc.id}/restore`)
                 await documents.fetch()
-                message.success(`已恢复「${doc.title}」`)
+                message.success(t('documents.restored', { title: doc.title }))
               } catch (error) {
                 message.error(getApiErrorMessage(error))
               }
             },
           },
-          { default: () => '撤销' },
+          { default: () => t('documents.undo') },
         ),
     })
   } catch (error) {
@@ -317,9 +320,9 @@ async function handleDelete(doc: DocumentMeta) {
 /** 移动端「⋯」菜单：删除用对话框确认（无 popconfirm 宿主） */
 function ownerMenuOptions(_doc: DocumentMeta): DropdownOption[] {
   return [
-    { key: 'share', label: '共享设置' },
-    { key: 'rename', label: '重命名' },
-    { key: 'delete', label: '删除', props: { style: 'color: #d03050' } },
+    { key: 'share', label: t('documents.menuShare') },
+    { key: 'rename', label: t('documents.menuRename') },
+    { key: 'delete', label: t('documents.menuDelete'), props: { style: 'color: #d03050' } },
   ]
 }
 
@@ -328,10 +331,10 @@ function handleOwnerMenu(key: string, doc: DocumentMeta) {
   else if (key === 'rename') openRename(doc)
   else if (key === 'delete') {
     dialog.warning({
-      title: '删除文档',
-      content: `确定删除「${doc.title}」吗？删除后会进入回收站，可随时恢复。`,
-      positiveText: '删除',
-      negativeText: '取消',
+      title: t('documents.deleteTitle'),
+      content: t('documents.deleteContent', { title: doc.title }),
+      positiveText: t('documents.deleteConfirm'),
+      negativeText: t('common.cancel'),
       positiveButtonProps: { type: 'error' },
       onPositiveClick: () => handleDelete(doc),
     })
@@ -359,26 +362,26 @@ function formatTime(value?: string): string {
  * 否则会出现上面「没有找到」、下面却列出评论的自相矛盾。
  */
 const emptyStateDescription = computed(() => {
-  if (!documents.searching) return '创建你的第一篇文档，开始写作'
+  if (!documents.searching) return t('documents.emptyCreate')
   if (documents.commentHits.length > 0) {
-    return `正文未命中「${documents.activeQuery}」，命中结果见下方评论`
+    return t('documents.emptySearchBody', { query: documents.activeQuery })
   }
-  return `没有找到与「${documents.activeQuery}」相关的文档`
+  return t('documents.emptySearchNone', { query: documents.activeQuery })
 })
 </script>
 
 <template>
   <div>
     <div class="list-header">
-      <h2>{{ documents.searching ? '搜索结果' : '文档' }}</h2>
+      <h2>{{ documents.searching ? $t('documents.headingSearch') : $t('documents.headingDocs') }}</h2>
       <n-select
         v-model:value="sortBy"
         :options="sortOptions"
         size="small"
-        aria-label="排序方式"
+        :aria-label="$t('documents.sortAria')"
         class="ctl-sort"
        name="sort-by" id="sort-by" />
-      <n-button-group size="small" aria-label="视图切换" class="ctl-view">
+      <n-button-group size="small" :aria-label="$t('documents.viewAria')" class="ctl-view">
         <n-button
           :type="viewMode === 'list' ? 'primary' : 'default'"
           @click="viewMode = 'list'"
@@ -397,27 +400,27 @@ const emptyStateDescription = computed(() => {
         v-model:value="searchInput"
         name="document-search"
         clearable
-        placeholder="搜索标题或正文…（/ 或 ⌘K 聚焦）"
-        aria-label="搜索文档"
+        :placeholder="$t('documents.searchPlaceholder')"
+        :aria-label="$t('documents.searchAria')"
         class="search-box"
       />
       <n-dropdown :options="createMenuOptions" @select="handleCreateMenu">
-        <n-button type="primary" :loading="creating" class="ctl-create">新建 ▾</n-button>
+        <n-button type="primary" :loading="creating" class="ctl-create">{{ $t('documents.createBtn') }}</n-button>
       </n-dropdown>
       <!-- 桌面平铺；移动端收进「⋯」（与列表行操作的收纳策略一致） -->
       <template v-if="!isMobile">
-        <n-button :loading="importing" class="ctl-import" @click="openImportPicker">导入</n-button>
-        <n-button quaternary class="ctl-trash" @click="router.push('/trash')">回收站</n-button>
+        <n-button :loading="importing" class="ctl-import" @click="openImportPicker">{{ $t('documents.importBtn') }}</n-button>
+        <n-button quaternary class="ctl-trash" @click="router.push('/trash')">{{ $t('documents.trashBtn') }}</n-button>
       </template>
       <n-dropdown v-else :options="moreMenuOptions" @select="handleMoreMenu">
-        <n-button quaternary aria-label="⋯（更多操作）" class="ctl-more">⋯</n-button>
+        <n-button quaternary :aria-label="$t('documents.moreAria')" class="ctl-more">⋯</n-button>
       </n-dropdown>
       <input
         ref="fileInputRef"
         type="file"
         accept=".md,.markdown,.docx,.xlsx"
         style="display: none"
-        aria-label="选择要导入的文件"
+        :aria-label="$t('documents.importFileAria')"
         @change="handleImportFile"
       />
     </div>
@@ -451,7 +454,7 @@ const emptyStateDescription = computed(() => {
             class="grid-card-body"
             role="link"
             tabindex="0"
-            :aria-label="`打开文档 ${doc.title}`"
+            :aria-label="t('documents.openDocAria', { title: doc.title })"
             @click="openDoc(doc)"
             @keydown.enter="openDoc(doc)"
           >
@@ -466,12 +469,12 @@ const emptyStateDescription = computed(() => {
               </n-tag>{{ doc.title }}
             </div>
             <n-space size="small" align="center" style="margin-top: 8px">
-              <n-tag v-if="doc.role === 'viewer'" size="tiny" type="warning" round>只读</n-tag>
-              <n-tag v-else-if="doc.role === 'editor'" size="tiny" type="info" round>可编辑</n-tag>
+              <n-tag v-if="doc.role === 'viewer'" size="tiny" type="warning" round>{{ $t('documents.viewerTag') }}</n-tag>
+              <n-tag v-else-if="doc.role === 'editor'" size="tiny" type="info" round>{{ $t('documents.editorTag') }}</n-tag>
               <span
                 v-if="(doc.members?.length ?? 0) > 0"
                 class="member-stack"
-                :aria-label="`共享给 ${doc.members?.length} 人`"
+                :aria-label="t('documents.sharedWithAria', { count: doc.members?.length })"
               >
                 <n-avatar
                   v-for="person in memberAvatars(doc).slice(0, 3)"
@@ -485,7 +488,7 @@ const emptyStateDescription = computed(() => {
               </span>
             </n-space>
             <n-text depth="3" style="font-size: 12px; display: block; margin-top: 8px">
-              {{ doc.role && doc.role !== 'owner' ? `由 ${doc.owner?.name ?? '他人'} 共享 · ` : '' }}
+              {{ doc.role && doc.role !== 'owner' ? t('documents.sharedBy', { name: doc.owner?.name ?? $t('documents.unknownUser') }) : '' }}
               {{ formatTime(doc.updated_at) }}
             </n-text>
           </div>
@@ -497,8 +500,8 @@ const emptyStateDescription = computed(() => {
                   quaternary
                   circle
                   :type="doc.pinned ? 'primary' : 'default'"
-                  :aria-label="doc.pinned ? `取消置顶 ${doc.title}` : `置顶 ${doc.title}`"
-                  :title="doc.pinned ? '取消置顶' : '置顶'"
+                  :aria-label="doc.pinned ? t('documents.unpinAria', { title: doc.title }) : t('documents.pinAria', { title: doc.title })"
+                  :title="doc.pinned ? $t('documents.pinTitlePinned') : $t('documents.pinTitle')"
                   :disabled="togglingPinId !== null && togglingPinId !== doc.id"
                   @click="togglePin(doc)"
                 >
@@ -521,7 +524,7 @@ const emptyStateDescription = computed(() => {
                 :options="ownerMenuOptions(doc)"
                 @select="(key: string) => handleOwnerMenu(key, doc)"
               >
-                <n-button size="tiny" quaternary aria-label="⋯（更多操作）">⋯</n-button>
+                <n-button size="tiny" quaternary :aria-label="$t('documents.moreAria')">⋯</n-button>
               </n-dropdown>
             </n-space>
           </template>
@@ -608,7 +611,7 @@ const emptyStateDescription = computed(() => {
                 <span
                   v-if="(doc.members?.length ?? 0) > 0"
                   class="member-stack"
-                  :aria-label="`共享给 ${doc.members?.length} 人`"
+                  :aria-label="t('documents.sharedWithAria', { count: doc.members?.length })"
                 >
                   <n-avatar
                     v-for="person in memberAvatars(doc).slice(0, 4)"
@@ -630,7 +633,7 @@ const emptyStateDescription = computed(() => {
                 </span>
 
                 <n-text depth="3" style="font-size: 12px">
-                  {{ doc.role && doc.role !== 'owner' ? `由 ${doc.owner?.name ?? '他人'} 共享 · ` : '' }}
+                  {{ doc.role && doc.role !== 'owner' ? t('documents.sharedBy', { name: doc.owner?.name ?? $t('documents.unknownUser') }) : '' }}
                   更新于 {{ formatTime(doc.updated_at) }}
                 </n-text>
               </n-space>
@@ -643,8 +646,8 @@ const emptyStateDescription = computed(() => {
                 quaternary
                 circle
                 :type="doc.pinned ? 'primary' : 'default'"
-                :aria-label="doc.pinned ? `取消置顶 ${doc.title}` : `置顶 ${doc.title}`"
-                :title="doc.pinned ? '取消置顶' : '置顶'"
+                :aria-label="doc.pinned ? t('documents.unpinAria', { title: doc.title }) : t('documents.pinAria', { title: doc.title })"
+                :title="doc.pinned ? $t('documents.pinTitlePinned') : $t('documents.pinTitle')"
                 :disabled="togglingPinId !== null && togglingPinId !== doc.id"
                 @click="togglePin(doc)"
               >
@@ -663,11 +666,11 @@ const emptyStateDescription = computed(() => {
               </n-button>
               <!-- 桌面：平铺操作；移动：收进「⋯」 -->
               <n-space v-if="doc.role === 'owner' && !isMobile" size="small">
-                <n-button size="small" quaternary @click="openShare(doc)">共享</n-button>
-                <n-button size="small" @click="openRename(doc)">重命名</n-button>
+                <n-button size="small" quaternary @click="openShare(doc)">{{ $t('documents.shareBtn') }}</n-button>
+                <n-button size="small" @click="openRename(doc)">{{ $t('documents.renameBtn') }}</n-button>
                 <n-popconfirm @positive-click="handleDelete(doc)">
                   <template #trigger>
-                    <n-button size="small" type="error" quaternary>删除</n-button>
+                    <n-button size="small" type="error" quaternary>{{ $t('documents.deleteBtn') }}</n-button>
                   </template>
                   确定删除「{{ doc.title }}」吗？将进入回收站。
                 </n-popconfirm>
@@ -677,7 +680,7 @@ const emptyStateDescription = computed(() => {
                 :options="ownerMenuOptions(doc)"
                 @select="(key: string) => handleOwnerMenu(key, doc)"
               >
-                <n-button size="small" quaternary aria-label="⋯（更多操作）">⋯</n-button>
+                <n-button size="small" quaternary :aria-label="$t('documents.moreAria')">⋯</n-button>
               </n-dropdown>
             </n-space>
           </template>
@@ -689,7 +692,7 @@ const emptyStateDescription = computed(() => {
 
     <!-- 评论命中：评论不在正文索引里，单独成组展示 -->
     <div v-if="documents.searching && documents.commentHits.length > 0" class="comment-hits">
-      <n-divider title placement="left">评论命中（{{ documents.commentHits.length }}）</n-divider>
+      <n-divider title placement="left">{{ $t('documents.commentHits', { count: documents.commentHits.length }) }}</n-divider>
       <n-list bordered>
         <n-list-item v-for="hit in documents.commentHits" :key="hit.id">
           <n-thing :title="hit.document_title">
@@ -701,7 +704,7 @@ const emptyStateDescription = computed(() => {
                 </template>
               </div>
               <n-text depth="3" style="font-size: 12px">
-                {{ hit.user?.name ?? '未知用户' }} · {{ formatTime(hit.created_at) }}
+                {{ hit.user?.name ?? $t('documents.unknownUser') }} · {{ formatTime(hit.created_at) }}
               </n-text>
             </template>
           </n-thing>
@@ -721,13 +724,13 @@ const emptyStateDescription = computed(() => {
     <n-modal
       v-model:show="renameDialogVisible"
       preset="dialog"
-      title="重命名文档"
-      positive-button-text="保存"
-      negative-button-text="取消"
+      :title="$t('documents.renameDialogTitle')"
+      :positive-button-text="$t('common.save')"
+      :negative-button-text="$t('common.cancel')"
       :loading="renaming"
       @positive-click="handleRename"
     >
-      <n-input v-model:value="renameTarget.title" placeholder="文档标题" aria-label="文档标题" @keyup.enter="handleRename"  name="document-title" id="document-title" />
+      <n-input v-model:value="renameTarget.title" :placeholder="$t('documents.docTitlePlaceholder')" :aria-label="$t('documents.docTitlePlaceholder')" @keyup.enter="handleRename"  name="document-title" id="document-title" />
     </n-modal>
 
     <ShareModal v-model:show="shareVisible" :document-id="shareDocumentId" />

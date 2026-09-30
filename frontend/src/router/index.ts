@@ -1,7 +1,9 @@
+import { watch } from 'vue'
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
+import { i18n } from '../i18n'
 
-const PAGE_TITLE = '多人实时协作文档'
+const t = i18n.global.t
 
 export const router = createRouter({
   history: createWebHistory(),
@@ -10,7 +12,7 @@ export const router = createRouter({
     {
       path: '/login',
       component: () => import('../layouts/DefaultLayout.vue'),
-      meta: { guest: true, title: `登录 · ${PAGE_TITLE}` },
+      meta: { guest: true, titleKey: 'router.login' },
       children: [
         {
           // name 须挂在空 path 子路由上：挂父路由会导致按 name 跳转时不渲染子组件（空白页）
@@ -23,7 +25,7 @@ export const router = createRouter({
     {
       path: '/register',
       component: () => import('../layouts/DefaultLayout.vue'),
-      meta: { guest: true, title: `注册 · ${PAGE_TITLE}` },
+      meta: { guest: true, titleKey: 'router.register' },
       children: [
         {
           path: '',
@@ -48,14 +50,14 @@ export const router = createRouter({
       path: '/invite/:token',
       name: 'invite',
       component: () => import('../views/InviteView.vue'),
-      meta: { requiresAuth: true, title: `接受邀请 · ${PAGE_TITLE}` },
+      meta: { requiresAuth: true, titleKey: 'router.invite' },
     },
     {
       // 公开只读分享：不设 requiresAuth，访客无需登录即可打开
       path: '/share/:token',
       name: 'share',
       component: () => import('../views/ShareView.vue'),
-      meta: { title: `只读分享 · ${PAGE_TITLE}` },
+      meta: { titleKey: 'router.share' },
     },
     {
       path: '/',
@@ -65,19 +67,19 @@ export const router = createRouter({
           path: '',
           name: 'home',
           component: () => import('../views/DocumentsView.vue'),
-          meta: { requiresAuth: true, title: PAGE_TITLE },
+          meta: { requiresAuth: true, titleKey: 'router.home' },
         },
         {
           path: 'trash',
           name: 'trash',
           component: () => import('../views/TrashView.vue'),
-          meta: { requiresAuth: true, title: `回收站 · ${PAGE_TITLE}` },
+          meta: { requiresAuth: true, titleKey: 'router.trash' },
         },
         {
           path: 'settings',
           name: 'settings',
           component: () => import('../views/SettingsView.vue'),
-          meta: { requiresAuth: true, title: `设置 · ${PAGE_TITLE}` },
+          meta: { requiresAuth: true, titleKey: 'router.settings' },
         },
       ],
     },
@@ -85,7 +87,7 @@ export const router = createRouter({
       path: '/:pathMatch(.*)*',
       name: 'not-found',
       component: () => import('../views/NotFoundView.vue'),
-      meta: { title: `页面不存在 · ${PAGE_TITLE}` },
+      meta: { titleKey: 'router.notFound' },
     },
   ],
 })
@@ -107,13 +109,16 @@ router.beforeEach(async (to) => {
   }
 })
 
-router.afterEach((to) => {
-  if (typeof to.meta.title === 'string') {
-    document.title = to.meta.title
-  } else if (to.name === 'doc') {
-    // 编辑器自行管理标题（加载文档元数据后覆写）
-    document.title = PAGE_TITLE
+function applyDocumentTitle(to: (typeof router)['currentRoute']['value']): void {
+  if (typeof to.meta.titleKey === 'string') {
+    document.title = t(to.meta.titleKey)
   } else {
-    document.title = PAGE_TITLE
+    // doc/sheet 编辑器自行管理标题（加载文档元数据后覆写），这里兜底
+    document.title = t('shell.appTitle')
   }
-})
+}
+
+router.afterEach(applyDocumentTitle)
+
+// 语言切换后立即刷新标签页标题（afterEach 只在导航时触发）
+watch(i18n.global.locale, () => applyDocumentTitle(router.currentRoute.value))

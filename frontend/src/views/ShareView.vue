@@ -44,9 +44,13 @@ onMounted(async () => {
     <n-spin :show="status === 'loading'" size="large">
       <!-- 失效：给出明确原因，不引导登录 -->
       <div v-if="status === 'invalid'" class="share-invalid">
-        <n-result status="404" title="链接无效或已失效" description="该分享链接可能已被撤销、过期，或文档已被删除。">
+        <n-result
+          status="404"
+          :title="$t('share.invalidTitle')"
+          :description="$t('share.invalidDesc')"
+        >
           <template #footer>
-            <n-button type="primary" @click="$router.push('/')">回到文档列表</n-button>
+            <n-button type="primary" @click="$router.push('/')">{{ $t('share.goHome') }}</n-button>
           </template>
         </n-result>
       </div>
@@ -61,8 +65,8 @@ onMounted(async () => {
               <path d="M7 11V7a5 5 0 0 1 10 0v4" />
             </svg>
           </n-icon>
-          <span>只读访客链接 · 无需登录即可查看</span>
-          <span v-if="expiresAt" class="share-expiry">有效期至 {{ new Date(expiresAt).toLocaleString() }}</span>
+          <span>{{ $t('share.visitorBanner') }}</span>
+          <span v-if="expiresAt" class="share-expiry">{{ $t('share.expiry', { time: new Date(expiresAt).toLocaleString() }) }}</span>
         </div>
 
         <component :is="editorView" :share-token="token" :shared-meta="meta" />

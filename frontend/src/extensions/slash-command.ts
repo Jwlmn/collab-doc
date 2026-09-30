@@ -1,4 +1,5 @@
 import { Extension } from '@tiptap/core'
+import { i18n } from '../i18n'
 import { PluginKey } from 'prosemirror-state'
 import type { ChainedCommands, Editor } from '@tiptap/core'
 import Suggestion from '@tiptap/suggestion'
@@ -26,49 +27,49 @@ export interface SlashItem {
 }
 
 /** 斜杠菜单可插入的块级命令 */
-export const SLASH_ITEMS: SlashItem[] = [
+const SLASH_ITEMS_BUILDERS = (): SlashItem[] => [
   {
-    title: '标题 1',
+    title: i18n.global.t('slash.h1'),
     keywords: 'h1 heading 大标题',
     command: (chain) => chain.toggleHeading({ level: 1 }),
   },
   {
-    title: '标题 2',
+    title: i18n.global.t('slash.h2'),
     keywords: 'h2 heading 中标题',
     command: (chain) => chain.toggleHeading({ level: 2 }),
   },
   {
-    title: '标题 3',
+    title: i18n.global.t('slash.h3'),
     keywords: 'h3 heading 小标题',
     command: (chain) => chain.toggleHeading({ level: 3 }),
   },
   {
-    title: '无序列表',
+    title: i18n.global.t('slash.bulletList'),
     keywords: 'ul bullet list 列表',
     command: (chain) => chain.toggleBulletList(),
   },
   {
-    title: '有序列表',
+    title: i18n.global.t('slash.orderedList'),
     keywords: 'ol ordered list 数字列表',
     command: (chain) => chain.toggleOrderedList(),
   },
   {
-    title: '引用',
+    title: i18n.global.t('slash.quote'),
     keywords: 'quote blockquote 提示',
     command: (chain) => chain.toggleBlockquote(),
   },
   {
-    title: '代码块',
+    title: i18n.global.t('slash.codeBlock'),
     keywords: 'code pre 程序',
     command: (chain) => chain.toggleCodeBlock(),
   },
   {
-    title: '分割线',
+    title: i18n.global.t('slash.hr'),
     keywords: 'hr divider 分隔线',
     command: (chain) => chain.setHorizontalRule(),
   },
   {
-    title: '图片',
+    title: i18n.global.t('slash.image'),
     keywords: 'image img picture 图片 插图',
     // 占位：实际走 action（需要先选文件、上传）
     command: (chain) => chain,
@@ -77,9 +78,10 @@ export const SLASH_ITEMS: SlashItem[] = [
 ]
 
 function filterItems(query: string): SlashItem[] {
+  const items = SLASH_ITEMS_BUILDERS()
   const q = query.trim().toLowerCase()
-  if (!q) return SLASH_ITEMS
-  return SLASH_ITEMS.filter(
+  if (!q) return items
+  return items.filter(
     (item) =>
       item.title.toLowerCase().includes(q) || item.keywords.toLowerCase().includes(q),
   )

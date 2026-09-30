@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { reactive, ref, watch } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { useMessage } from 'naive-ui'
 import { api, getApiErrorMessage } from '../utils/request'
 import type { DocumentMember } from '../types'
+import { useI18n } from 'vue-i18n'
 
+const { t } = useI18n()
 const props = defineProps<{
   show: boolean
   documentId: number
@@ -141,7 +143,7 @@ async function handleAdd(): Promise<void> {
     inviteForm.email = ''
     pickedEmail.value = ''
     suggestOpen.value = false
-    message.success(`已添加 ${data.data.user.name}`)
+    message.success(t('share.addedMember', { name: data.data.user.name }))
   } catch (error) {
     message.error(getApiErrorMessage(error))
   } finally {
@@ -157,7 +159,7 @@ async function handleRoleChange(member: DocumentMember, role: 'viewer' | 'editor
       { role },
     )
     member.role = data.data.role
-    message.success(`已将 ${member.user.name} 设为${role === 'editor' ? '可编辑' : '只读'}`)
+    message.success(t('share.roleSet', { name: member.user.name, role: role === 'editor' ? t('documents.editorTag') : t('documents.viewerTag') }))
   } catch (error) {
     message.error(getApiErrorMessage(error))
     await fetchMembers()
@@ -171,7 +173,7 @@ async function handleRemove(member: DocumentMember): Promise<void> {
   try {
     await api.delete(`/documents/${props.documentId}/members/${member.id}`)
     members.value = members.value.filter((item) => item.id !== member.id)
-    message.success(`已移除 ${member.user.name}`)
+    message.success(t('share.removed', { name: member.user.name }))
   } catch (error) {
     message.error(getApiErrorMessage(error))
   } finally {
@@ -192,12 +194,12 @@ const shareExpiresAt = ref<string | null>(null)
 const creatingShare = ref(false)
 const revokingShare = ref(false)
 
-const shareExpiryOptions = [
-  { label: '永不过期', value: null as number | null },
-  { label: '1 天', value: 1 },
-  { label: '7 天', value: 7 },
-  { label: '30 天', value: 30 },
-]
+const shareExpiryOptions = computed(() => [
+  { label: t('share.expiryNever'), value: null as number | null },
+  { label: t('share.expiryDays', { days: 1 }), value: 1 },
+  { label: t('share.expiryDays', { days: 7 }), value: 7 },
+  { label: t('share.expiryDays', { days: 30 }), value: 30 },
+])
 
 /** 生成（或按新有效期重新签发）公开只读链接 */
 async function createShareLink(): Promise<void> {
@@ -209,7 +211,7 @@ async function createShareLink(): Promise<void> {
     const { data } = await api.post(`/documents/${props.documentId}/share-link`, body)
     shareLink.value = window.location.origin + data.data.path
     shareExpiresAt.value = data.data.expires_at ?? null
-    await copyToClipboard(shareLink.value, '公开只读链接已复制（任何人可查看，无需登录）')
+    await copyToClipboard(shareLink.value, t('share.shareCopied'))
   } catch (error) {
     message.error(getApiErrorMessage(error))
   } finally {
@@ -224,7 +226,7 @@ async function revokeShareLink(): Promise<void> {
     await api.delete(`/documents/${props.documentId}/share-link`)
     shareLink.value = ''
     shareExpiresAt.value = null
-    message.success('公开链接已撤销，旧链接立即失效')
+    message.success(t('share.shareRevoked'))
   } catch (error) {
     message.error(getApiErrorMessage(error))
   } finally {
@@ -238,7 +240,7 @@ async function copyToClipboard(url: string, successText: string): Promise<void> 
     await navigator.clipboard.writeText(url)
     message.success(successText)
   } catch {
-    message.warning('自动复制失败，请长按/手动选择下方链接复制')
+    message.warning(t('share.copyFail'))
     linkFallback.value = url
     linkFallbackVisible.value = true
   }
@@ -246,7 +248,7 @@ async function copyToClipboard(url: string, successText: string): Promise<void> 
 
 async function copyShareLink(): Promise<void> {
   if (!shareLink.value) return
-  await copyToClipboard(shareLink.value, '链接已复制')
+  await copyToClipboard(shareLink.value, t('share.linkCopied'))
 }
 
 async function copyInviteLink(): Promise<void> {
@@ -255,7 +257,7 @@ async function copyInviteLink(): Promise<void> {
     const { data } = await api.post(`/documents/${props.documentId}/invite-link`)
     const url = window.location.origin + data.data.path
     try {
-      await copyToClipboard(url, '邀请链接已复制（受邀者默认只读）')
+      await copyToClipboard(url, t('share.inviteCopied'))
     } catch {
       /* copyToClipboard 内部已处理降级，这里只兜异常 */
     }
@@ -272,15 +274,15 @@ async function copyInviteLink(): Promise<void> {
     :show="show"
     preset="card"
     style="width: min(520px, 92vw)"
-    title="共享设置"
+    :title="$t('share.modalTitle')"
     @update:show="emit('update:show', $event)"
   >
     <div class="invite-row">
       <div class="invite-input-wrap">
         <n-input
           v-model:value="inviteForm.email"
-          placeholder="搜索用户名或邮箱…"
-          aria-label="邀请用户名或邮箱"
+          :placeholder="$t('share.inviteSearchPlaceholder')"
+          :aria-label="$t('share.inviteSearchAria')"
           @keydown="handleInviteKeydown"
           @blur="closeSuggest"
          name="invite-query" id="invite-query" />
@@ -288,7 +290,7 @@ async function copyInviteLink(): Promise<void> {
           v-if="suggestOpen && suggestions.length > 0"
           class="suggest-popup"
           role="listbox"
-          aria-label="成员搜索结果"
+          :aria-label="$t('share.memberResultsAria')"
         >
           <div
             v-for="(user, index) in suggestions"
@@ -307,14 +309,14 @@ async function copyInviteLink(): Promise<void> {
       </div>
       <n-select
         v-model:value="inviteForm.role"
-        aria-label="权限角色"
+        :aria-label="$t('share.roleAria')"
         :options="[
-          { label: '只读', value: 'viewer' },
-          { label: '可编辑', value: 'editor' },
+          { label: t('documents.viewerTag'), value: 'viewer' },
+          { label: t('documents.editorTag'), value: 'editor' },
         ]"
         style="width: 110px"
        name="invite-role" id="invite-role" />
-      <n-button type="primary" :loading="adding" @click="handleAdd">添加</n-button>
+      <n-button type="primary" :loading="adding" @click="handleAdd">{{ $t('share.addBtn') }}</n-button>
     </div>
 
     <n-button
@@ -325,13 +327,13 @@ async function copyInviteLink(): Promise<void> {
       style="margin-bottom: 14px"
       @click="copyInviteLink"
     >
-      🔗 复制邀请链接（受邀者默认只读）
+      {{ $t('share.inviteCopyBtn') }}
     </n-button>
 
     <div class="public-share">
-      <n-divider title placement="left" style="margin: 8px 0 12px">公开链接</n-divider>
+      <n-divider title placement="left" style="margin: 8px 0 12px">{{ $t('share.publicDivider') }}</n-divider>
       <n-text depth="3" style="font-size: 12px; display: block; margin-bottom: 8px">
-        任何人拿到链接即可只读查看，无需登录；撤销后旧链接立即失效。
+        {{ $t('share.publicHint') }}
       </n-text>
 
       <div class="public-share-row">
@@ -339,11 +341,11 @@ async function copyInviteLink(): Promise<void> {
           v-model:value="shareExpiry"
           :options="shareExpiryOptions"
           size="small"
-          aria-label="链接有效期"
+          :aria-label="$t('share.expiryAria')"
           style="width: 130px"
          name="share-expiry" id="share-expiry" />
         <n-button type="primary" size="small" :loading="creatingShare" @click="createShareLink">
-          {{ shareLink ? '重新签发' : '生成链接' }}
+          {{ shareLink ? $t('share.reissue') : $t('share.generate') }}
         </n-button>
       </div>
 
@@ -352,20 +354,20 @@ async function copyInviteLink(): Promise<void> {
           :value="shareLink"
           readonly
           size="small"
-          aria-label="公开分享链接"
+          :aria-label="$t('share.shareLinkAria')"
           @focus="($event.target as HTMLInputElement).select()"
          name="share-link" id="share-link" />
         <n-space size="small" style="margin-top: 8px">
-          <n-button size="small" quaternary @click="copyShareLink">复制</n-button>
+          <n-button size="small" quaternary @click="copyShareLink">{{ $t('share.copyBtn') }}</n-button>
           <n-popconfirm @positive-click="revokeShareLink">
             <template #trigger>
-              <n-button size="small" type="error" quaternary :loading="revokingShare">撤销</n-button>
+              <n-button size="small" type="error" quaternary :loading="revokingShare">{{ $t('share.revokeBtn') }}</n-button>
             </template>
-            撤销后该文档所有公开链接立即失效，确定吗？
+            {{ $t('share.revokeConfirm') }}
           </n-popconfirm>
         </n-space>
         <n-text v-if="shareExpiresAt" depth="3" style="font-size: 12px; display: block; margin-top: 6px">
-          有效期至 {{ new Date(shareExpiresAt).toLocaleString() }}
+          {{ $t('share.validUntil', { time: new Date(shareExpiresAt).toLocaleString() }) }}
         </n-text>
       </div>
     </div>
@@ -373,7 +375,7 @@ async function copyInviteLink(): Promise<void> {
     <n-spin :show="loading">
       <n-empty
         v-if="!loading && members.length === 0"
-        description="还没有共享成员"
+        :description="$t('share.noMembers')"
         style="margin: 48px 0"
       />
       <n-list v-else class="member-list">
@@ -386,8 +388,8 @@ async function copyInviteLink(): Promise<void> {
                 size="small"
                 :loading="changingId === member.id"
                 :options="[
-                  { label: '只读', value: 'viewer' },
-                  { label: '可编辑', value: 'editor' },
+                  { label: t('documents.viewerTag'), value: 'viewer' },
+                  { label: t('documents.editorTag'), value: 'editor' },
                 ]"
                 style="width: 100px"
                 name="member-role"
@@ -397,10 +399,10 @@ async function copyInviteLink(): Promise<void> {
               <n-popconfirm @positive-click="handleRemove(member)">
                 <template #trigger>
                   <n-button size="small" type="error" quaternary :loading="removingId === member.id">
-                    移除
+                    {{ $t('share.removeBtn') }}
                   </n-button>
                 </template>
-                确定将「{{ member.user.name }}」移出文档吗？
+                {{ $t('share.removeConfirm', { name: member.user.name }) }}
               </n-popconfirm>
             </n-space>
           </template>
@@ -410,7 +412,7 @@ async function copyInviteLink(): Promise<void> {
 
     <template #footer>
       <n-text depth="3" style="font-size: 12px">
-        只读成员可阅读、评论；可编辑成员还可修改内容与保存版本；仅所有者可重命名、删除与管理共享。
+        {{ $t('share.permissionHint') }}
       </n-text>
     </template>
   </n-modal>
@@ -419,13 +421,13 @@ async function copyInviteLink(): Promise<void> {
   <n-modal
     v-model:show="linkFallbackVisible"
     preset="dialog"
-    title="手动复制邀请链接"
-    negative-button-text="关闭"
+    :title="$t('share.manualCopyTitle')"
+    :negative-button-text="$t('share.closeBtn')"
   >
     <n-input
       :value="linkFallback"
       readonly
-      aria-label="邀请链接"
+      :aria-label="$t('share.inviteLinkAria')"
       @focus="($event.target as HTMLInputElement).select()"
      name="invite-link-fallback" id="invite-link-fallback" />
   </n-modal>

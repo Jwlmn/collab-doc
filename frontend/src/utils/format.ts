@@ -1,3 +1,5 @@
+import { i18n } from '../i18n'
+
 /** 绝对时间（本地化，24 小时制）；空值返回空串 */
 export function formatTime(value?: string | null): string {
   if (!value) return ''
@@ -23,7 +25,7 @@ export function formatRelativeTime(value?: string | null): string {
   }
 
   const days = Math.floor((startOfToday - date.getTime()) / 86_400_000) + 1
-  if (days <= 7) return `${days} 天前`
+  if (days <= 7) return i18n.global.t('common.daysAgo', { days })
 
   return formatTime(value)
 }

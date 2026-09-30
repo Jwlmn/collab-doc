@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { useMessage } from 'naive-ui'
 import { useAuthStore } from '../stores/auth'
@@ -10,6 +11,7 @@ import { formatTime } from '../utils/format'
 const auth = useAuthStore()
 const notifications = useNotificationsStore()
 const router = useRouter()
+const { t } = useI18n()
 const message = useMessage()
 
 const show = ref(false)
@@ -41,13 +43,13 @@ async function openPanel(): Promise<void> {
 
 /** 通知文案 */
 function describe(item: NotificationItem): string {
-  const actor = item.data.actor_name ?? '有人'
-  const title = item.data.document_title || '未命名文档'
+  const actor = item.data.actor_name ?? t('notifications.someone')
+  const title = item.data.document_title || t('notifications.untitled')
   if (item.data.kind === 'mention') {
-    return `${actor} 在「${title}」中 @了你`
+    return t('notifications.mention', { actor, title })
   }
-  const role = item.data.role === 'editor' ? '可编辑' : '只读'
-  return `${actor} 将「${title}」共享给你（${role}）`
+  const role = item.data.role === 'editor' ? t('documents.editorTag') : t('documents.viewerTag')
+  return t('notifications.shared', { actor, title, role })
 }
 
 /** 点击通知：标已读 + 跳转对应文档 */
@@ -94,7 +96,7 @@ onBeforeUnmount(() => {
     @update:show="(v: boolean) => v && openPanel()"
   >
     <template #trigger>
-      <n-button quaternary circle aria-label="通知">
+      <n-button quaternary circle :aria-label="$t('notifications.aria')">
         <template #icon>
           <n-badge
             :value="notifications.unread"
@@ -116,7 +118,7 @@ onBeforeUnmount(() => {
 
     <div class="bell-panel">
       <div class="bell-header">
-        <span class="bell-title">通知</span>
+        <span class="bell-title">{{ $t('notifications.title') }}</span>
         <n-button
           v-if="notifications.unread > 0"
           size="tiny"
@@ -124,14 +126,14 @@ onBeforeUnmount(() => {
           type="primary"
           @click="handleMarkAllRead"
         >
-          全部已读
+          {{ $t('notifications.markAllRead') }}
         </n-button>
       </div>
 
       <n-spin :show="loading" size="small">
         <n-empty
           v-if="!loading && notifications.items.length === 0"
-          description="暂无通知"
+          :description="$t('notifications.empty')"
           size="small"
           style="padding: 24px 0"
         />

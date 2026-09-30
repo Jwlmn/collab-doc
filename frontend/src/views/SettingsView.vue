@@ -1,16 +1,26 @@
 <script setup lang="ts">
 import { computed, reactive, ref } from 'vue'
 import { useMessage } from 'naive-ui'
+import { useI18n } from 'vue-i18n'
 import { api, getApiErrorMessage } from '../utils/request'
 import { uploadImage } from '../utils/upload'
 import { useAuthStore } from '../stores/auth'
 import { useTheme } from '../composables/useTheme'
+import { setLocale, type AppLocale } from '../i18n'
 
 const auth = useAuthStore()
 const message = useMessage()
+const { t, locale } = useI18n()
 
 /** 外观：三态 radio 即时生效（auto = 跟随系统），无需保存 */
 const { mode: themeMode } = useTheme()
+
+/** 语言：切换即持久化（与外观同为即时生效） */
+const languageMode = computed<AppLocale>({
+  // vue-i18n 的 locale ref 声明为 string，本应用只允许两语，收窄回字面量联合
+  get: () => locale.value as AppLocale,
+  set: (value: AppLocale) => setLocale(value),
+})
 
 /* ---------------- 个人资料 ---------------- */
 
@@ -33,7 +43,7 @@ async function saveProfile() {
   savingProfile.value = true
   try {
     await auth.updateProfile({ name, avatar_url: profile.avatar_url })
-    message.success('资料已保存')
+    message.success(t('settings.profileSaved'))
   } catch (error) {
     message.error(getApiErrorMessage(error))
   } finally {
@@ -95,7 +105,7 @@ async function changePassword() {
       password: password.password,
       password_confirmation: password.password_confirmation,
     })
-    message.success('密码已更新')
+    message.success(t('settings.passwordUpdated'))
     Object.assign(password, { current_password: '', password: '', password_confirmation: '' })
   } catch (error) {
     message.error(getApiErrorMessage(error))
@@ -104,26 +114,31 @@ async function changePassword() {
   }
 }
 
-const themeOptions = [
-  { label: '跟随系统', value: 'auto' },
-  { label: '浅色', value: 'light' },
-  { label: '深色', value: 'dark' },
+const themeOptions = computed(() => [
+  { label: t('settings.themeSystem'), value: 'auto' },
+  { label: t('settings.themeLight'), value: 'light' },
+  { label: t('settings.themeDark'), value: 'dark' },
+])
+
+const languageOptions = [
+  { label: '简体中文', value: 'zh-CN' },
+  { label: 'English', value: 'en' },
 ]
 </script>
 
 <template>
   <div class="settings-page">
-    <h1 class="settings-title">设置</h1>
+    <h1 class="settings-title">{{ $t('settings.title') }}</h1>
 
     <!-- 个人资料 -->
-    <n-card title="个人资料" class="settings-card">
+    <n-card :title="$t('settings.profileCard')" class="settings-card">
       <div class="profile-row">
         <n-avatar :size="64" round :src="auth.user?.avatar_url ?? undefined">
           {{ (auth.user?.name ?? '?').slice(0, 1) }}
         </n-avatar>
         <n-space align="center">
           <n-button size="small" :loading="uploadingAvatar" @click="openAvatarPicker">
-            更换头像
+            {{ $t('settings.changeAvatar') }}
           </n-button>
           <n-button
             v-if="profile.avatar_url"
@@ -132,27 +147,27 @@ const themeOptions = [
             type="error"
             @click="removeAvatar"
           >
-            移除头像
+            {{ $t('settings.removeAvatar') }}
           </n-button>
-          <n-text depth="3" style="font-size: 12px">JPG / PNG / GIF / WebP，不超过 5MB</n-text>
+          <n-text depth="3" style="font-size: 12px">{{ $t('settings.avatarHint') }}</n-text>
         </n-space>
         <input
           ref="avatarInputRef"
           type="file"
           accept="image/*"
           hidden
-          aria-label="选择头像图片"
+          :aria-label="$t('settings.changeAvatar')"
           @change="handleAvatarPick"
         />
       </div>
 
       <n-form label-placement="left" label-width="64" style="margin-top: 16px">
-        <n-form-item label="昵称">
+        <n-form-item :label="$t('settings.nameLabel')">
           <n-input
             v-model:value="profile.name"
             maxlength="255"
-            placeholder="你的昵称"
-            aria-label="昵称"
+            :placeholder="$t('settings.namePlaceholder')"
+            :aria-label="$t('settings.nameLabel')"
           />
         </n-form-item>
       </n-form>
@@ -163,39 +178,39 @@ const themeOptions = [
           :disabled="!profileDirty || profile.name.trim() === ''"
           @click="saveProfile"
         >
-          保存
+          {{ $t('common.save') }}
         </n-button>
       </n-space>
     </n-card>
 
     <!-- 修改密码 -->
-    <n-card title="修改密码" class="settings-card">
+    <n-card :title="$t('settings.passwordCard')" class="settings-card">
       <n-form label-placement="left" label-width="88">
-        <n-form-item label="当前密码">
+        <n-form-item :label="$t('settings.currentPasswordLabel')">
           <n-input
             v-model:value="password.current_password"
             type="password"
             show-password-on="click"
-            placeholder="请输入当前密码"
-            aria-label="当前密码"
+            :placeholder="$t('settings.currentPasswordPlaceholder')"
+            :aria-label="$t('settings.currentPasswordLabel')"
           />
         </n-form-item>
-        <n-form-item label="新密码">
+        <n-form-item :label="$t('settings.newPasswordLabel')">
           <n-input
             v-model:value="password.password"
             type="password"
             show-password-on="click"
-            placeholder="至少 8 位"
-            aria-label="新密码"
+            :placeholder="$t('settings.newPasswordPlaceholder')"
+            :aria-label="$t('settings.newPasswordLabel')"
           />
         </n-form-item>
-        <n-form-item label="确认新密码">
+        <n-form-item :label="$t('settings.confirmPasswordLabel')">
           <n-input
             v-model:value="password.password_confirmation"
             type="password"
             show-password-on="click"
-            placeholder="再次输入新密码"
-            aria-label="确认新密码"
+            :placeholder="$t('settings.confirmPasswordPlaceholder')"
+            :aria-label="$t('settings.confirmPasswordLabel')"
           />
         </n-form-item>
       </n-form>
@@ -206,14 +221,28 @@ const themeOptions = [
           :disabled="!passwordReady"
           @click="changePassword"
         >
-          更新密码
+          {{ $t('settings.updatePassword') }}
         </n-button>
       </n-space>
     </n-card>
 
+    <!-- 语言 -->
+    <n-card :title="$t('settings.languageCard')" class="settings-card">
+      <n-radio-group v-model:value="languageMode" :aria-label="$t('settings.languageCard')">
+        <n-space>
+          <n-radio v-for="option in languageOptions" :key="option.value" :value="option.value">
+            {{ option.label }}
+          </n-radio>
+        </n-space>
+      </n-radio-group>
+      <n-text depth="3" style="font-size: 12px; display: block; margin-top: 8px">
+        {{ $t('settings.languageHint') }}
+      </n-text>
+    </n-card>
+
     <!-- 外观 -->
-    <n-card title="外观" class="settings-card">
-      <n-radio-group v-model:value="themeMode" aria-label="主题模式">
+    <n-card :title="$t('settings.appearanceCard')" class="settings-card">
+      <n-radio-group v-model:value="themeMode" :aria-label="$t('settings.appearanceCard')">
         <n-space>
           <n-radio v-for="option in themeOptions" :key="option.value" :value="option.value">
             {{ option.label }}
@@ -221,7 +250,7 @@ const themeOptions = [
         </n-space>
       </n-radio-group>
       <n-text depth="3" style="font-size: 12px; display: block; margin-top: 8px">
-        选择「跟随系统」后，深浅色随设备的深色模式自动切换；顶栏的月亮/太阳按钮会切换为手动指定。
+        {{ $t('settings.appearanceHint') }}
       </n-text>
     </n-card>
   </div>

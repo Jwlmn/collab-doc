@@ -4,6 +4,7 @@ import { useMessage } from 'naive-ui'
 import { api, getApiErrorMessage } from '../utils/request'
 import { useIsMobile } from '../composables/useIsMobile'
 import { useAuthStore } from '../stores/auth'
+import { useI18n } from 'vue-i18n'
 import { parseContent } from '../utils/mention'
 import { formatTime } from '../utils/format'
 import type { Comment, MentionUser } from '../types'
@@ -24,6 +25,7 @@ const emit = defineEmits<{
 }>()
 
 const auth = useAuthStore()
+const { t } = useI18n()
 const isMobile = useIsMobile()
 const listWrapRef = ref<HTMLElement | null>(null)
 const message = useMessage()
@@ -71,7 +73,7 @@ async function handleResolve(root: Comment): Promise<void> {
       { resolved: nextResolved },
     )
     root.resolved_at = data.data.resolved_at
-    message.success(nextResolved ? '线程已标记解决' : '线程已重新打开')
+    message.success(nextResolved ? t('comments.resolvedToast') : t('comments.reopenedToast'))
     emit('changed')
   } catch (error) {
     message.error(getApiErrorMessage(error))
@@ -268,7 +270,7 @@ async function handleDelete(comment: Comment): Promise<void> {
       (item) => item.id !== comment.id && item.parent_id !== comment.id,
     )
     if (replyingTo.value?.id === comment.id) replyingTo.value = null
-    message.success('评论已删除')
+    message.success(t('comments.deleted'))
     emit('changed')
   } catch (error) {
     message.error(getApiErrorMessage(error))
@@ -281,7 +283,7 @@ async function handleDelete(comment: Comment): Promise<void> {
 
 <template>
   <n-drawer :show="show" :width="isMobile ? '100%' : 420" placement="right" @update:show="emit('update:show', $event)">
-    <n-drawer-content title="评论" closable>
+    <n-drawer-content :title="$t('comments.title')" closable>
       <div class="comment-body">
         <!-- n-spin 必须包在 list-wrap 内部：它是 comment-body 的直接子元素时
              会占据唯一的 flex 位，导致 list-wrap 的 flex:1 落在非 flex 容器里失效，
@@ -290,7 +292,7 @@ async function handleDelete(comment: Comment): Promise<void> {
           <n-spin :show="loading" class="list-spin">
             <n-empty
               v-if="!loading && comments.length === 0"
-              description="还没有评论，输入 @ 可提及协作者"
+              :description="$t('comments.empty')"
               style="margin-top: 48px"
             />
             <!-- 有评论但当前视图为空（全被「隐藏已解决」滤掉）时仍保留控制行，
@@ -298,14 +300,14 @@ async function handleDelete(comment: Comment): Promise<void> {
             <div v-else class="comment-list">
               <!-- 控制行：未解决数 + 已解决线程开关 -->
               <div v-if="roots.length > 0" class="list-controls">
-                <n-text depth="3" class="controls-count">{{ unresolvedCount }} 条未解决</n-text>
+                <n-text depth="3" class="controls-count">{{ $t('comments.unresolvedCount', { count: unresolvedCount }) }}</n-text>
                 <label v-if="resolvedCount > 0" class="controls-toggle">
                   <n-switch
                     v-model:value="showResolved"
                     size="small"
-                    aria-label="显示已解决线程"
+                    :aria-label="$t('comments.showResolvedAria')"
                   />
-                  显示已解决（{{ resolvedCount }}）
+                  {{ $t('comments.showResolved', { count: resolvedCount }) }}
                 </label>
               </div>
 
@@ -313,7 +315,7 @@ async function handleDelete(comment: Comment): Promise<void> {
                 v-if="visibleRoots.length === 0 && !loading"
                 class="all-resolved-hint"
               >
-                线程都已解决 🎉 打开上方开关可回看
+                {{ $t('comments.allResolved') }}
               </div>
 
               <div
@@ -326,21 +328,21 @@ async function handleDelete(comment: Comment): Promise<void> {
                   <n-avatar round :size="28" color="#4db6ac">
                     {{ (root.user.name ?? '?').slice(0, 1) }}
                   </n-avatar>
-                  <span class="comment-author">{{ root.user.name ?? '未知用户' }}</span>
+                  <span class="comment-author">{{ root.user.name ?? $t('documents.unknownUser') }}</span>
                   <span class="comment-time">{{ formatTime(root.created_at) }}</span>
                   <n-tag v-if="root.resolved_at" size="tiny" type="success" round>
-                    ✓ 已解决
+                    {{ $t('comments.resolvedTag') }}
                   </n-tag>
                   <n-button text size="tiny" @click="handleResolve(root)">
-                    {{ root.resolved_at ? '重新打开' : '解决' }}
+                    {{ root.resolved_at ? $t('comments.reopen') : $t('comments.resolve') }}
                   </n-button>
                   <n-popconfirm v-if="canDelete(root)" @positive-click="handleDelete(root)">
                     <template #trigger>
                       <n-button text type="error" size="tiny" :loading="deletingId === root.id">
-                        删除
+                        {{ $t('comments.deleteBtn') }}
                       </n-button>
                     </template>
-                    确定删除该评论吗？回复会一并删除。
+                    {{ $t('comments.deleteRootConfirm') }}
                   </n-popconfirm>
                 </div>
                 <div class="comment-content">
@@ -357,7 +359,7 @@ async function handleDelete(comment: Comment): Promise<void> {
                       <n-avatar round :size="20" color="#7986cb">
                         {{ (reply.user.name ?? '?').slice(0, 1) }}
                       </n-avatar>
-                      <span class="comment-author">{{ reply.user.name ?? '未知用户' }}</span>
+                      <span class="comment-author">{{ reply.user.name ?? $t('documents.unknownUser') }}</span>
                       <span class="comment-time">{{ formatTime(reply.created_at) }}</span>
                       <n-popconfirm v-if="canDelete(reply)" @positive-click="handleDelete(reply)">
                         <template #trigger>
@@ -367,10 +369,10 @@ async function handleDelete(comment: Comment): Promise<void> {
                             size="tiny"
                             :loading="deletingId === reply.id"
                           >
-                            删除
+                            {{ $t('comments.deleteBtn') }}
                           </n-button>
                         </template>
-                        确定删除该回复吗？
+                        {{ $t('comments.deleteReplyConfirm') }}
                       </n-popconfirm>
                     </div>
                     <div class="comment-content">
@@ -383,7 +385,7 @@ async function handleDelete(comment: Comment): Promise<void> {
                 </div>
 
                 <div class="thread-actions">
-                  <n-button text size="tiny" @click="startReply(root)">回复</n-button>
+                  <n-button text size="tiny" @click="startReply(root)">{{ $t('comments.replyBtn') }}</n-button>
                 </div>
               </div>
             </div>
@@ -394,19 +396,19 @@ async function handleDelete(comment: Comment): Promise<void> {
           <!-- 回复上下文横幅 -->
           <div v-if="replyingTo" class="reply-banner">
             <n-text depth="2" class="reply-banner-text">
-              正在回复 <strong>{{ replyingTo.user.name ?? '未知用户' }}</strong>
+              {{ $t('comments.replyingBanner') }} <strong>{{ replyingTo.user.name ?? $t('documents.unknownUser') }}</strong>
             </n-text>
-            <n-button text size="tiny" @click="cancelReply">取消</n-button>
+            <n-button text size="tiny" @click="cancelReply">{{ $t('common.cancel') }}</n-button>
           </div>
           <div
             v-if="mentionPopupVisible"
             id="mention-popup"
             class="mention-popup"
             role="listbox"
-            aria-label="提及用户候选"
+            :aria-label="$t('comments.mentionPopupAria')"
           >
-            <div v-if="mentionSearching" class="mention-empty">搜索中…</div>
-            <div v-else-if="mentionUsers.length === 0" class="mention-empty">无匹配用户</div>
+            <div v-if="mentionSearching" class="mention-empty">{{ $t('comments.mentionSearching') }}</div>
+            <div v-else-if="mentionUsers.length === 0" class="mention-empty">{{ $t('comments.mentionNoMatch') }}</div>
             <div
               v-for="(user, index) in mentionUsers"
               :key="user.id"
@@ -427,8 +429,8 @@ async function handleDelete(comment: Comment): Promise<void> {
             v-model:value="content"
             type="textarea"
             :rows="3"
-            placeholder="输入评论，@ 可提及用户"
-            aria-label="评论内容"
+            :placeholder="$t('comments.inputPlaceholder')"
+            :aria-label="$t('comments.inputAria')"
             maxlength="2000"
             show-count
             @input="handleInput"
@@ -438,7 +440,7 @@ async function handleDelete(comment: Comment): Promise<void> {
             @keyup.enter.meta="handleSubmit"
            name="comment-content" id="comment-content" />
           <n-text depth="3" style="display: block; margin-top: 4px; font-size: 12px">
-            Ctrl / ⌘ + Enter 发送
+            {{ $t('comments.sendHint') }}
           </n-text>
           <n-button
             type="primary"
@@ -448,7 +450,7 @@ async function handleDelete(comment: Comment): Promise<void> {
             style="margin-top: 8px"
             @click="handleSubmit"
           >
-            {{ replyingTo ? '发送回复' : '发送评论' }}
+            {{ replyingTo ? $t('comments.sendReply') : $t('comments.sendComment') }}
           </n-button>
         </div>
       </div>

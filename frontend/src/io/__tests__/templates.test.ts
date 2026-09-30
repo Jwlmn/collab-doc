@@ -19,14 +19,15 @@ describe('文档模板', () => {
     }
   })
 
-  it('模板标题即文档标题', () => {
+  it('模板标题即文档标题（当前语言）', () => {
     for (const template of DOC_TEMPLATES) {
-      expect(template.title.length).toBeGreaterThan(0)
+      expect(template.title().length).toBeGreaterThan(0)
     }
+    expect(findTemplate('meeting')?.title()).toBe('会议纪要')
   })
 
   it('findTemplate 命中与未命中', () => {
-    expect(findTemplate('meeting')?.title).toBe('会议纪要')
+    expect(findTemplate('meeting')?.key).toBe('meeting')
     expect(findTemplate('nope')).toBeUndefined()
   })
 })
