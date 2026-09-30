@@ -79,9 +79,14 @@ const shareVisible = ref(false)
 const unreadComments = ref(0)
 const exporting = ref(false)
 
-/** 导出当前富文本文档为 md / docx（Excel 格式属于表格文档专属） */
+/** 导出当前富文本文档为 md / docx / PDF（打印对话框另存） */
 async function handleExport(key: string) {
   if (!editor.value || exporting.value) return
+  if (key === 'pdf') {
+    // 界面收敛见 styles/main.css 的 @media print；浏览器打印对话框里选「另存为 PDF」
+    window.print()
+    return
+  }
   const json = editor.value.getJSON()
   const title = meta.value?.title?.trim() || '未命名文档'
   exporting.value = true
@@ -111,6 +116,7 @@ async function handleExport(key: string) {
 const exportOptions = [
   { key: 'md', label: 'Markdown（.md）' },
   { key: 'docx', label: 'Word 文档（.docx）' },
+  { key: 'pdf', label: 'PDF（打印导出）' },
 ]
 
 const editor = shallowRef<Editor | null>(null)
@@ -774,6 +780,10 @@ async function handleRename() {
     </div>
 
     <div v-else class="editor-surface">
+      <!-- 打印专用标题头（屏上不显示）：顶栏被 @media print 收掉后纸面仍要标题 -->
+      <div class="print-header">
+        <h1>{{ titleEditing || meta?.title || '未命名文档' }}</h1>
+      </div>
       <EditorToolbar :editor="editor" :readonly="isReadonly" />
 
       <div v-show="editor" ref="bubbleEl" class="bubble-menu" role="toolbar" aria-label="选中格式工具栏">
@@ -971,6 +981,24 @@ async function handleRename() {
 .editor-surface :deep(.fmt-toolbar) {
   margin: 0 -56px;
   border-radius: 8px 8px 0 0;
+}
+/* 打印标题头：屏上隐藏，@media print 显示（纸面配色统一由 main.css 变量接管） */
+.print-header {
+  display: none;
+}
+@media print {
+  .print-header {
+    display: block;
+    margin-bottom: 20px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+  .print-header h1 {
+    margin: 0;
+    font-size: 22px;
+    font-weight: 600;
+    color: var(--text-1);
+  }
 }
 .editor-surface :deep(.tiptap) {
   padding-top: 32px;

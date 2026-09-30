@@ -82,3 +82,151 @@ body {
     scroll-behavior: auto !important;
   }
 }
+
+/* ------------------------------------------------------------------ */
+/* 打印 / 导出 PDF（浏览器打印对话框「另存为 PDF」）                     */
+/* ------------------------------------------------------------------ */
+
+@page {
+  margin: 16mm 14mm;
+}
+
+@media print {
+  /* 一套纸面配色覆盖两套屏幕主题：变量是全站唯一色源，翻变量即翻全部引用 */
+  :root,
+  :root[data-theme='dark'] {
+    color-scheme: light;
+    --bg-page: #ffffff;
+    --bg-surface: #ffffff;
+    --bg-muted: #f4f5f7;
+    --border-subtle: #cccccc;
+    --border-faint: #e5e5e5;
+    --shadow-card: none;
+    --text-1: #000000;
+    --text-2: #333333;
+    --text-3: #555555;
+    --bg-hover: #f4f5f7;
+    --bg-active: #e8e8e8;
+    --border-strong: #999999;
+    --bg-editor: #ffffff;
+    --status-ok-bg: #e8f7ee;
+    --status-ok-fg: #1a7f37;
+    --status-err-bg: #fdeceb;
+    --status-err-fg: #b42318;
+    --status-warn-bg: #fff7e6;
+    --status-warn-fg: #ad6800;
+    --status-warn-border: #ffe7ba;
+    --status-info-bg: #e7f1ff;
+    --status-info-fg: #1d5fbf;
+    --search-hit-bg: rgba(255, 212, 0, 0.55);
+    --col-active-bg: #eaf3ff;
+  }
+
+  html,
+  body {
+    background: #fff !important;
+    color: #000;
+  }
+
+  /* 屏幕交互层一律不进纸面（抽屉/弹层挂在 body 下，选择器按 teleport 兜） */
+  .skip-link,
+  .slash-menu,
+  .n-dropdown,
+  .n-drawer,
+  .n-modal,
+  .n-dialog,
+  .n-popover,
+  .n-tooltip,
+  .n-message,
+  .n-notification,
+  .n-backtop {
+    display: none !important;
+  }
+
+  /* 富文本文档：顶栏 / 工具栏 / 气泡菜单收掉，纸面拍平占满 */
+  .editor-topbar,
+  .fmt-toolbar,
+  .bubble-menu {
+    display: none !important;
+  }
+  .editor-page {
+    height: auto;
+    overflow: visible;
+  }
+  .editor-surface {
+    margin: 0;
+    max-width: none;
+    padding: 0;
+    border-radius: 0;
+    box-shadow: none !important;
+    background: #fff !important;
+    min-height: 0;
+  }
+  .doc-editor-content {
+    color: #000;
+    min-height: 0;
+  }
+  .doc-editor-content mark {
+    /* 高亮底色要上纸：无底色的高亮等于没导出 */
+    background: #fff3bf !important;
+    color: #1f2329 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .doc-editor-content pre,
+  .doc-editor-content code {
+    background: #f4f5f7 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .doc-editor-content img {
+    max-width: 100% !important;
+    height: auto !important;
+  }
+
+  /* Excel：格式条收掉，网格去滚动容器全量铺开，表头底色上纸 */
+  .sheet-topbar,
+  .format-bar {
+    display: none !important;
+  }
+  .sheet-page {
+    height: auto;
+    overflow: visible;
+  }
+  .sheet-surface,
+  .grid-wrap {
+    overflow: visible !important;
+    height: auto;
+    background: #fff !important;
+  }
+  .sheet-grid thead th,
+  .sheet-grid .row-head {
+    background: #f4f5f7 !important;
+    color: #333 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .sheet-grid td {
+    /* 文字色走 --text-1 变量（纸面已翻黑），不加 !important 以免盖掉用户行内字色 */
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* 分页礼仪：标题不断页，段落保留首尾行，表格/代码块不拦腰断 */
+  h1,
+  h2,
+  h3,
+  h4 {
+    break-after: avoid-page;
+  }
+  p,
+  li {
+    orphans: 3;
+    widows: 3;
+  }
+  pre,
+  table,
+  blockquote {
+    break-inside: avoid;
+  }
+}
