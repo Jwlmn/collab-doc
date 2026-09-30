@@ -23,7 +23,7 @@ class DocumentController extends Controller
         $user = $request->user();
 
         $documents = Document::query()
-            ->with(['user:id,name', 'members.user:id,name'])
+            ->with(['user:id,name', 'members.user:id,name', 'pins' => fn ($pins) => $pins->where('user_id', $user->id)])
             ->where(function ($query) use ($user) {
                 $query
                     ->where('user_id', $user->id)
@@ -190,9 +190,39 @@ class DocumentController extends Controller
     {
         $this->authorize('view', $document);
 
-        $document->load(['user:id,name', 'members.user:id,name']);
+        $document->load([
+            'user:id,name',
+            'members.user:id,name',
+            'pins' => fn ($pins) => $pins->where('user_id', $request->user()->id),
+        ]);
 
         return new DocumentResource($document);
+    }
+
+    /**
+     * 置顶 / 取消置顶（按当前用户独立，任何可见该文档的成员均可操作自己的视图）。
+     */
+    public function pin(Request $request, Document $document): DocumentResource
+    {
+        $this->authorize('view', $document);
+
+        $validated = $request->validate([
+            'pinned' => ['required', 'boolean'],
+        ]);
+
+        $user = $request->user();
+
+        if ($validated['pinned']) {
+            $user->pins()->firstOrCreate(['document_id' => $document->id]);
+        } else {
+            $user->pins()->where('document_id', $document->id)->delete();
+        }
+
+        return new DocumentResource($document->load([
+            'user:id,name',
+            'members.user:id,name',
+            'pins' => fn ($pins) => $pins->where('user_id', $user->id),
+        ]));
     }
 
     /**

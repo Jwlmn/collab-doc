@@ -132,6 +132,37 @@ const sortedList = computed(() => {
   return arr
 })
 
+/**
+ * 列表分区渲染：置顶组在前（组内仍按当前排序），其余归「全部文档」。
+ * 搜索态不分组（结果以命中为序），无置顶时保持原来的单列表。
+ */
+const displayGroups = computed(() => {
+  const all = sortedList.value
+  if (documents.searching) return [{ key: 'all', title: '', docs: all }]
+  const pinned = all.filter((doc) => doc.pinned)
+  if (pinned.length === 0) return [{ key: 'all', title: '', docs: all }]
+  const rest = all.filter((doc) => !doc.pinned)
+  return [
+    { key: 'pinned', title: '置顶', docs: pinned },
+    ...(rest.length > 0 ? [{ key: 'rest', title: '全部文档', docs: rest }] : []),
+  ]
+})
+
+const togglingPinId = ref<number | null>(null)
+
+async function togglePin(doc: DocumentMeta) {
+  if (togglingPinId.value !== null) return
+  togglingPinId.value = doc.id
+  try {
+    const pinned = await documents.togglePin(doc)
+    message.success(pinned ? `已置顶「${doc.title}」` : `已取消置顶「${doc.title}」`)
+  } catch (error) {
+    message.error(getApiErrorMessage(error))
+  } finally {
+    togglingPinId.value = null
+  }
+}
+
 watch(searchInput, (value) => {
   if (searchTimer) clearTimeout(searchTimer)
   searchTimer = setTimeout(() => {
@@ -389,9 +420,11 @@ const emptyStateDescription = computed(() => {
           </n-button>
         </n-space>
       </n-empty>
-      <!-- 网格视图 -->
+      <!-- 网格视图（置顶 / 全部文档分区：组头占满整行） -->
       <div v-else-if="viewMode === 'grid'" class="doc-grid">
-        <n-card v-for="doc in sortedList" :key="doc.id" size="small" class="doc-grid-card">
+        <template v-for="group in displayGroups" :key="group.key">
+          <div v-if="group.title" class="group-title grid-group-title">{{ group.title }}</div>
+          <n-card v-for="doc in group.docs" :key="doc.id" size="small" class="doc-grid-card">
           <div
             class="grid-card-body"
             role="link"
@@ -436,9 +469,31 @@ const emptyStateDescription = computed(() => {
           </div>
           <template #footer>
             <n-space justify="space-between" align="center">
-              <n-button size="tiny" type="primary" quaternary @click="openDoc(doc)">
-                打开
-              </n-button>
+              <n-space align="center" size="small">
+                <n-button
+                  size="tiny"
+                  quaternary
+                  circle
+                  :type="doc.pinned ? 'primary' : 'default'"
+                  :aria-label="doc.pinned ? `取消置顶 ${doc.title}` : `置顶 ${doc.title}`"
+                  :title="doc.pinned ? '取消置顶' : '置顶'"
+                  :disabled="togglingPinId !== null && togglingPinId !== doc.id"
+                  @click="togglePin(doc)"
+                >
+                  <template #icon>
+                    <n-icon size="14">
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="1.5">
+                        <path d="M12 17v5" />
+                        <path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z" />
+                      </svg>
+                    </n-icon>
+                  </template>
+                </n-button>
+                <n-button size="tiny" type="primary" quaternary @click="openDoc(doc)">
+                  打开
+                </n-button>
+              </n-space>
               <n-dropdown
                 v-if="doc.role === 'owner'"
                 :options="ownerMenuOptions(doc)"
@@ -449,10 +504,15 @@ const emptyStateDescription = computed(() => {
             </n-space>
           </template>
         </n-card>
+        </template>
       </div>
 
-      <n-list v-else bordered class="doc-list">
-        <n-list-item v-for="doc in sortedList" :key="doc.id">
+      <!-- 列表视图（每个分区一个 n-list） -->
+      <template v-else>
+        <div v-for="group in displayGroups" :key="group.key">
+          <h3 v-if="group.title" class="group-title">{{ group.title }}</h3>
+          <n-list bordered class="doc-list">
+            <n-list-item v-for="doc in group.docs" :key="doc.id">
           <template #prefix>
             <!-- Excel 表格图标 -->
             <n-icon v-if="doc.type === 'excel'" size="24" color="#18a058">
@@ -556,6 +616,26 @@ const emptyStateDescription = computed(() => {
           </n-thing>
           <template #suffix>
             <n-space align="center">
+              <n-button
+                size="small"
+                quaternary
+                circle
+                :type="doc.pinned ? 'primary' : 'default'"
+                :aria-label="doc.pinned ? `取消置顶 ${doc.title}` : `置顶 ${doc.title}`"
+                :title="doc.pinned ? '取消置顶' : '置顶'"
+                :disabled="togglingPinId !== null && togglingPinId !== doc.id"
+                @click="togglePin(doc)"
+              >
+                <template #icon>
+                  <n-icon size="16">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                      stroke="currentColor" stroke-width="1.5">
+                      <path d="M12 17v5" />
+                      <path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z" />
+                    </svg>
+                  </n-icon>
+                </template>
+              </n-button>
               <n-button size="small" type="primary" quaternary @click="openDoc(doc)">
                 打开
               </n-button>
@@ -580,7 +660,9 @@ const emptyStateDescription = computed(() => {
             </n-space>
           </template>
         </n-list-item>
-      </n-list>
+          </n-list>
+        </div>
+      </template>
     </template>
 
     <!-- 评论命中：评论不在正文索引里，单独成组展示 -->
@@ -653,7 +735,7 @@ const emptyStateDescription = computed(() => {
   border-radius: 8px;
 }
 .search-hit {
-  background: rgba(255, 212, 0, 0.45);
+  background: var(--search-hit-bg);
   color: inherit;
   border-radius: 2px;
   padding: 0 1px;
@@ -681,6 +763,17 @@ const emptyStateDescription = computed(() => {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
   gap: 14px;
+}
+/* 分区组头：列表视图为小标题，网格视图作为跨满整行的网格项 */
+.group-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-3);
+  margin: 18px 0 10px;
+}
+.group-title.grid-group-title {
+  grid-column: 1 / -1;
+  margin: 4px 0 0;
 }
 .doc-grid-card {
   cursor: pointer;

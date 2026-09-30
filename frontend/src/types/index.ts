@@ -34,6 +34,8 @@ export interface DocumentMeta {
   members?: Array<{ id: number | null; name: string | null; role?: string }>
   created_at?: string
   updated_at?: string
+  /** 当前用户是否置顶（按用户独立） */
+  pinned?: boolean
   /** 搜索结果时返回的上下文片段 */
   snippet?: string | null
 }

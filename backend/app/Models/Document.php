@@ -84,4 +84,14 @@ class Document extends Model
     {
         return $this->hasMany(DocumentLastRead::class);
     }
+
+    /**
+     * 各用户对该文档的置顶记录。
+     *
+     * @return HasMany<DocumentPin, $this>
+     */
+    public function pins(): HasMany
+    {
+        return $this->hasMany(DocumentPin::class);
+    }
 }

@@ -30,6 +30,16 @@ class User extends Authenticatable
     }
 
     /**
+     * 该用户发起的文档置顶（按用户独立，互不影响）。
+     *
+     * @return HasMany<DocumentPin, $this>
+     */
+    public function pins(): HasMany
+    {
+        return $this->hasMany(DocumentPin::class);
+    }
+
+    /**
      * Get the attributes that should be cast.
      *
      * @return array<string, string>

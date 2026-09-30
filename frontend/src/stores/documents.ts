@@ -67,5 +67,28 @@ export const useDocumentsStore = defineStore('documents', () => {
     list.value = list.value.filter((doc) => doc.id !== id)
   }
 
-  return { list, loading, searching, activeQuery, commentHits, fetch, search, create, rename, remove }
+  /** 置顶 / 取消置顶（服务端按用户独立），返回切换后的状态 */
+  async function togglePin(doc: DocumentMeta): Promise<boolean> {
+    const pinned = !doc.pinned
+    const { data } = await api.post(`/documents/${doc.id}/pin`, { pinned })
+    const index = list.value.findIndex((item) => item.id === doc.id)
+    if (index !== -1) {
+      list.value[index] = data.data
+    }
+    return pinned
+  }
+
+  return {
+    list,
+    loading,
+    searching,
+    activeQuery,
+    commentHits,
+    fetch,
+    search,
+    create,
+    rename,
+    remove,
+    togglePin,
+  }
 })

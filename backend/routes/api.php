@@ -48,6 +48,7 @@ Route::middleware('auth:sanctum')->group(function () {
         ->whereNumber('document');
 
     Route::apiResource('documents', DocumentController::class);
+    Route::post('/documents/{document}/pin', [DocumentController::class, 'pin']);
     Route::post('/documents/{document}/collab-token', CollabTokenController::class);
     Route::post('/documents/{document}/invite-link', [InviteController::class, 'link']);
     // 公开只读分享链接（创建 / 撤销），仅所有者

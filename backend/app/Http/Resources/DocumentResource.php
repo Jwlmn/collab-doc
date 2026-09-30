@@ -40,6 +40,9 @@ class DocumentResource extends JsonResource
                     'role' => $member->role,
                 ])
                 ->values(),
+            // 当前用户是否置顶（仅在加载了本人 pins 关联时为 true，否则 false）
+            'pinned' => $this->relationLoaded('pins')
+                && $this->pins->contains('user_id', $viewerId),
             'created_at' => $this->created_at?->toIso8601String(),
             'updated_at' => $this->updated_at?->toIso8601String(),
             // 回收站列表展示删除时间；正常文档为 null
