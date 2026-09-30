@@ -155,6 +155,8 @@ function inlineChildren(nodes: JSONContent[] | undefined, ctx: InlineContext = {
       const isCode = marks.some((m) => m.type === 'code')
       const linkMark = marks.find((m) => m.type === 'link')
       const href = linkMark ? String(linkMark.attrs?.href ?? '') : ctx.href
+      const highlightMark = marks.find((m) => m.type === 'highlight')
+      const textStyleMark = marks.find((m) => m.type === 'textStyle')
 
       const run = new TextRun({
         text: node.text ?? '',
@@ -163,8 +165,20 @@ function inlineChildren(nodes: JSONContent[] | undefined, ctx: InlineContext = {
         strike: marks.some((m) => m.type === 'strike') || undefined,
         ...(isCode
           ? { font: 'Courier New', shading: { type: ShadingType.CLEAR, fill: 'F4F5F7' } }
-          : {}),
-        ...(href ? { color: '0563C1', underline: {} } : {}),
+          : highlightMark
+            ? {
+                shading: {
+                  type: ShadingType.CLEAR,
+                  // 与编辑器默认黄（#fff3bf）一致；multicolor 选色优先
+                  fill: docxColor(highlightMark.attrs?.color, 'FFF3BF'),
+                },
+              }
+            : {}),
+        ...(href
+          ? { color: '0563C1', underline: {} }
+          : textStyleMark && docxColor(textStyleMark.attrs?.color)
+            ? { color: docxColor(textStyleMark.attrs?.color) }
+            : {}),
       })
 
       if (href) {
@@ -183,6 +197,23 @@ function inlineChildren(nodes: JSONContent[] | undefined, ctx: InlineContext = {
 
 function listLevel(_type: string, depth: number): number {
   return Math.min(depth, 5)
+}
+
+/** '#' 前缀 / 3 位短写统一成 docx 要求的 6 位大写 HEX；不认识的值返回 fallback */
+function docxColor(value: unknown, fallback?: string): string | undefined {
+  const raw = String(value ?? '').trim().replace(/^#/, '')
+  if (/^[0-9a-f]{6}$/i.test(raw)) return raw.toUpperCase()
+  if (/^[0-9a-f]{3}$/i.test(raw)) return raw.replace(/./g, (c) => c + c).toUpperCase()
+  return fallback
+}
+
+/** TextAlign 扩展存在 attrs.textAlign 时映射到 docx 对齐（默认不传，走 docx 左对齐） */
+function alignOf(node: JSONContent): (typeof AlignmentType)[keyof typeof AlignmentType] | undefined {
+  const value = node.attrs?.textAlign
+  if (value === 'center') return AlignmentType.CENTER
+  if (value === 'right') return AlignmentType.RIGHT
+  if (value === 'left') return AlignmentType.LEFT
+  return undefined
 }
 
 function blocksToDocx(
@@ -209,13 +240,19 @@ function blocksToDocx(
           new Paragraph({
             heading: map[level] ?? HeadingLevel.HEADING_1,
             children: inlineChildren(node.content, ctx),
+            alignment: alignOf(node),
           }),
         )
         break
       }
 
       case 'paragraph':
-        out.push(new Paragraph({ children: inlineChildren(node.content, ctx) }))
+        out.push(
+          new Paragraph({
+            children: inlineChildren(node.content, ctx),
+            alignment: alignOf(node),
+          }),
+        )
         break
 
       case 'bulletList':

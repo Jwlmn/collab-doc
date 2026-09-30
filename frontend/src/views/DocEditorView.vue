@@ -429,7 +429,12 @@ onMounted(async () => {
       const { data } = await api.get(`/documents/${docId.value}`)
       const loaded: DocumentMeta = data.data
       meta.value = loaded
-      titleEditing.value = loaded.title
+      // 慢网络下用户可能已抢先把光标放进标题框开打：焦点在输入框时不回填，
+      // 避免 meta 落地把正在输入的内容清掉（回车失焦后由 handleRename 兜底）
+      const titleEl = titleInputRef.value?.$el
+      if (!titleEl || !titleEl.contains(document.activeElement)) {
+        titleEditing.value = loaded.title
+      }
       document.title = `${loaded.title} · ${PAGE_TITLE}`
 
       // 防呆：excel 文档误入富文本路由
@@ -506,6 +511,13 @@ onMounted(async () => {
     syncTick.value++
   })
 
+  // 编辑器创建必须等首次同步落地（拿齐服务端状态）；连不上则超时兜底，
+  // 保持离线也能进编辑器（骨架屏期间不接受输入，不会丢用户操作）
+  const firstSyncSettled = new Promise<void>((resolve) => {
+    provider!.on('synced', () => resolve())
+    setTimeout(resolve, 4000)
+  })
+
   provider.on('unsyncedChanges', () => {
     syncTick.value++
   })
@@ -515,6 +527,21 @@ onMounted(async () => {
     applyFollow()
   })
   refreshCollaborators()
+
+  await firstSyncSettled
+
+  // 骨架段落（撤销安全网）：空文档在 UndoManager 创建之前先写入一个空段落。
+  // 否则首次输入会把「段落节点 + 文字」作为一个 tracked 事务整体入栈：
+  // 撤销连段落一起删 → y-sync 补一个默认空段落 → 重做恢复原文 → 出现重复段落。
+  // 写入早于 UndoManager 构造，永不进撤销栈（与 Collaboration 的 field 保持一致）。
+  const fragment = ydoc.getXmlFragment('default')
+  if (fragment.length === 0) {
+    ydoc.transact(() => {
+      const paragraph = new Y.XmlElement('paragraph')
+      paragraph.insert(0, [new Y.XmlText()])
+      fragment.insert(0, [paragraph])
+    })
+  }
 
   // 等待 surface（含气泡菜单容器）渲染完成后再创建编辑器
   await nextTick()
@@ -863,6 +890,7 @@ async function handleRename() {
           <tr><td><kbd>⇧⌘/Ctrl + Z</kbd></td><td>重做</td></tr>
           <tr><td><kbd>⌘/Ctrl + ⏎</kbd></td><td>打开评论抽屉</td></tr>
           <tr><td><kbd>⇧⌘/Ctrl + S</kbd></td><td>删除线</td></tr>
+          <tr><td><kbd>⇧⌘/Ctrl + H</kbd></td><td>高亮</td></tr>
           <tr><td><kbd>/</kbd></td><td>斜杠命令菜单（标题/列表/引用…）</td></tr>
           <tr><td><kbd>/</kbd> 或 <kbd>⌘/Ctrl + K</kbd></td><td>聚焦搜索（文档列表页）</td></tr>
           <tr><td><kbd>Esc</kbd></td><td>关闭弹层</td></tr>
@@ -1023,6 +1051,15 @@ async function handleRename() {
   border: none;
   border-top: 1px solid var(--border-subtle);
   margin: 1.5em 0;
+}
+/* 高亮底色恒为浅色系（默认黄 / 调色板粉彩），文字锁深墨水：
+   深色主题下若继承页面浅色字，压在亮底上不可读；选色渲染的
+   inline `color: inherit` 会被这条 !important 收编 */
+:deep(.doc-editor-content mark) {
+  color: #1f2329 !important;
+  background: #fff3bf;
+  border-radius: 2px;
+  padding: 0 1px;
 }
 :deep(.collaboration-carets__caret) {
   position: relative;

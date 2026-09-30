@@ -16,8 +16,12 @@ test('文档置顶 → 分区排序在前 → 刷新仍置顶 → 取消置顶�
     const renamed = page.waitForResponse(
       (r) => r.request().method() === 'PUT' && /\/api\/documents\/\d+$/.test(r.url()),
     )
-    // 先全选再输入：光标点进输入框是定位插入点，直接打字会追加到「未命名文档」后
-    await page.getByPlaceholder('未命名文档').click()
+    // 先等 meta 落地（输入框拿到默认值），再全选改名：
+    // ① 抢在 meta 前打字会被回填覆盖（产品侧已有焦点守卫，这里仍显式等值更稳）
+    // ② 光标点进输入框是定位插入点，直接打字会追加到「未命名文档」后
+    const titleInput = page.getByPlaceholder('未命名文档')
+    await expect(titleInput).toHaveValue('未命名文档')
+    await titleInput.click()
     await page.keyboard.press('ControlOrMeta+a')
     await page.keyboard.type(title)
     await page.keyboard.press('Enter')

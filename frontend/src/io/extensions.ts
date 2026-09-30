@@ -1,6 +1,9 @@
 import StarterKit from '@tiptap/starter-kit'
 import { TableKit } from '@tiptap/extension-table'
 import Image from '@tiptap/extension-image'
+import Highlight from '@tiptap/extension-highlight'
+import TextAlign from '@tiptap/extension-text-align'
+import { Color, TextStyle } from '@tiptap/extension-text-style'
 import type { Extensions } from '@tiptap/core'
 
 /**
@@ -13,6 +16,13 @@ import type { Extensions } from '@tiptap/core'
  *
  * 用行内节点而非块级：`![alt](src)` 是 Markdown 的行内语法，行内才能与文字
  * 混排并严格往返；单独成段时它自己占一行，视觉上与块级无异。
+ *
+ * 富文本增强（v4 #3）：
+ * - Highlight multicolor：高亮标记（默认黄，可传色）
+ * - TextStyle + Color：行内文字颜色的载体与插件
+ * - TextAlign：段落/标题对齐（不含 justify，工具栏只提供左/中/右）
+ * 注意：这三者在 .md 导出中会降级丢失（Markdown 无对应语法，与文字颜色、
+ * 对齐同边界）；.docx 导出已适配。
  */
 export function getBaseExtensions(): Extensions {
   return [
@@ -20,6 +30,10 @@ export function getBaseExtensions(): Extensions {
       undoRedo: false,
       link: { openOnClick: false, autolink: true },
     }),
+    TextStyle,
+    Color,
+    Highlight.configure({ multicolor: true }),
+    TextAlign.configure({ types: ['heading', 'paragraph'], alignments: ['left', 'center', 'right'] }),
     TableKit,
     Image.configure({ allowBase64: false, inline: true }),
   ]

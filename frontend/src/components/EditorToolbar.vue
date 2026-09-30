@@ -41,6 +41,48 @@ function isActive(name: string, attributes?: Record<string, unknown>): boolean {
   return props.editor?.isActive(name, attributes) ?? false
 }
 
+/** 撤销/重做栈可用性（空栈置灰，随事务刷新） */
+const canUndo = computed(() => {
+  void tick.value
+  return props.editor?.can().undo() ?? false
+})
+const canRedo = computed(() => {
+  void tick.value
+  return props.editor?.can().redo() ?? false
+})
+
+/** 当前段落/标题的对齐值（无属性按默认左对齐算） */
+function currentAlign(): string {
+  void tick.value
+  const fromNode = (name: 'heading' | 'paragraph'): string => {
+    const value = props.editor?.getAttributes(name)?.textAlign
+    return typeof value === 'string' && value !== '' ? value : 'left'
+  }
+  return props.editor?.isActive('heading') ? fromNode('heading') : fromNode('paragraph')
+}
+
+function toggleAlign(alignment: string): void {
+  run((c) => (currentAlign() === alignment ? c.unsetTextAlign() : c.setTextAlign(alignment)))
+}
+
+/* ---------------- 文字颜色 ---------------- */
+
+const TEXT_COLORS = ['#1f2329', '#d03050', '#f0883e', '#18a058', '#2080f0', '#9575cd']
+
+const colorMenuOptions = computed(() => [
+  { key: 'default', label: '默认颜色' },
+  { type: 'divider', key: 'cd' },
+  ...TEXT_COLORS.map((c) => ({ key: c, label: 'A', props: { style: `color:${c}` } })),
+])
+
+function handleColorMenu(key: string): void {
+  if (key === 'default') {
+    run((c) => c.unsetColor())
+    return
+  }
+  run((c) => c.setColor(key))
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function run(command: (chain: any) => any): void {
   if (!props.editor || props.readonly) return
@@ -150,7 +192,7 @@ function handleTableMenu(key: string) {
           size="small"
           quaternary
           aria-label="↶（撤销）"
-          :disabled="readonly"
+          :disabled="readonly || !canUndo"
           @click="run((c) => c.undo())"
         >
           ↶
@@ -164,7 +206,7 @@ function handleTableMenu(key: string) {
           size="small"
           quaternary
           aria-label="↷（重做）"
-          :disabled="readonly"
+          :disabled="readonly || !canRedo"
           @click="run((c) => c.redo())"
         >
           ↷
@@ -223,6 +265,29 @@ function handleTableMenu(key: string) {
 
     <n-divider vertical />
 
+    <n-tooltip trigger="hover">
+      <template #trigger>
+        <n-button
+          size="small"
+          quaternary
+          aria-label="高亮"
+          :type="isActive('highlight') ? 'primary' : 'default'"
+          :disabled="readonly"
+          @click="run((c) => c.toggleHighlight())"
+        >
+          <mark>高亮</mark>
+        </n-button>
+      </template>
+      高亮 (⌘⇧H)
+    </n-tooltip>
+    <n-dropdown :options="colorMenuOptions" :disabled="readonly" @select="handleColorMenu">
+      <n-button size="small" quaternary :disabled="readonly" aria-label="文字色（文字颜色）">
+        文字色 ▾
+      </n-button>
+    </n-dropdown>
+
+    <n-divider vertical />
+
     <n-tooltip v-for="level in [1, 2, 3]" :key="level" trigger="hover">
       <template #trigger>
         <n-button
@@ -271,6 +336,21 @@ function handleTableMenu(key: string) {
       </template>
       有序列表
     </n-tooltip>
+
+    <n-divider vertical />
+
+    <n-button
+      v-for="align in (['left', 'center', 'right'] as const)"
+      :key="align"
+      size="small"
+      quaternary
+      :aria-label="align === 'left' ? '左对齐' : align === 'center' ? '居中对齐' : '右对齐'"
+      :type="currentAlign() === align ? 'primary' : 'default'"
+      :disabled="readonly"
+      @click="toggleAlign(align)"
+    >
+      {{ align === 'left' ? '左' : align === 'center' ? '中' : '右' }}
+    </n-button>
 
     <n-divider vertical />
 
