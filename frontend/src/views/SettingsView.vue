@@ -133,8 +133,13 @@ const languageOptions = [
     <!-- 个人资料 -->
     <n-card :title="$t('settings.profileCard')" class="settings-card">
       <div class="profile-row">
+        <!-- n-avatar 的默认插槽优先级高于 src：只要插槽有内容就渲染文字、不发图片请求，
+             所以首字母只在没有头像 URL 时才放进默认插槽；加载失败走 #fallback 回退 -->
         <n-avatar :size="64" round :src="auth.user?.avatar_url ?? undefined">
-          {{ (auth.user?.name ?? '?').slice(0, 1) }}
+          <template v-if="!auth.user?.avatar_url">{{ (auth.user?.name ?? '?').slice(0, 1) }}</template>
+          <template #fallback>
+            <span class="avatar-fallback">{{ (auth.user?.name ?? '?').slice(0, 1) }}</span>
+          </template>
         </n-avatar>
         <n-space align="center">
           <n-button size="small" :loading="uploadingAvatar" @click="openAvatarPicker">
@@ -273,5 +278,13 @@ const languageOptions = [
   align-items: center;
   gap: 16px;
   flex-wrap: wrap;
+}
+/* n-avatar #fallback 裸渲染进 flex 容器，需自带占满与居中 */
+.avatar-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
 }
 </style>
