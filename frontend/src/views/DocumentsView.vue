@@ -11,6 +11,7 @@ import { userColor as colorOf } from '../utils/color'
 import { useIsMobile } from '../composables/useIsMobile'
 import { useImportFlowStore } from '../stores/importFlow'
 import { importFileToPayload, docTitleFromFilename } from '../io/importFile'
+import { DOC_TEMPLATES, findTemplate, type DocTemplate } from '../io/templates'
 import type { DocumentMeta } from '../types'
 
 /** 按文档类型打开对应编辑器 */
@@ -198,9 +199,21 @@ onBeforeUnmount(() => {
   window.removeEventListener('keydown', handleSearchShortcut)
 })
 
+const TEMPLATE_ICONS: Record<string, string> = {
+  meeting: '🗒️',
+  weekly: '📋',
+  todo: '✅',
+}
+
 const createMenuOptions = [
   { key: 'md', label: '📄 MD 文档（富文本）' },
   { key: 'excel', label: '📊 Excel 表格（电子表格）' },
+  { type: 'divider', key: 'd1' },
+  // 模板 = 创建后经 importFlow 注入种子内容（与文件导入同一管线）
+  ...DOC_TEMPLATES.map((template) => ({
+    key: `tpl:${template.key}`,
+    label: `${TEMPLATE_ICONS[template.key] ?? '📄'} ${template.title}（模板）`,
+  })),
 ]
 
 /** 移动端头部收纳的「⋯」菜单（导入/回收站） */
@@ -214,10 +227,14 @@ function handleMoreMenu(key: string) {
   else if (key === 'trash') void router.push('/trash')
 }
 
-async function handleCreate(type: 'md' | 'excel' = 'md') {
+async function handleCreate(type: 'md' | 'excel' = 'md', template?: DocTemplate) {
   creating.value = true
   try {
-    const doc = await documents.create(undefined, type)
+    const doc = await documents.create(template?.title, type)
+    // 模板种子：走 importFlow，编辑器协同首帧后一次性写入（与文件导入同管线）
+    if (template) {
+      importFlow.setPending({ kind: 'md', json: template.build() })
+    }
     // P0-2：创建后直达编辑器并聚焦标题
     await router.push({
       path: type === 'excel' ? `/sheet/${doc.id}` : `/doc/${doc.id}`,
@@ -231,7 +248,12 @@ async function handleCreate(type: 'md' | 'excel' = 'md') {
 }
 
 function handleCreateMenu(key: string) {
-  void handleCreate(key === 'excel' ? 'excel' : 'md')
+  if (key === 'excel') {
+    void handleCreate('excel')
+    return
+  }
+  const template = key.startsWith('tpl:') ? findTemplate(key.slice(4)) : undefined
+  void handleCreate('md', template)
 }
 
 function openRename(doc: DocumentMeta) {

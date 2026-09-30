@@ -1,6 +1,6 @@
 # v4 开发计划 ——「让文档好管理，让界面有夜间模式」
 
-> 状态：**进行中**（2026-09-30 立项）；✅ 第 1–6 项 已完成（深色模式 / 文档置顶 / 富文本增强 / PDF 打印导出 / 设置页 / 评论进阶，2026-09-30）
+> 状态：**进行中**（2026-09-30 立项）；✅ 第 1–7 项 已完成（深色模式 / 文档置顶 / 富文本增强 / PDF 打印导出 / 设置页 / 评论进阶 / 文档模板，2026-09-30）
 > 前情：v3（B1–B3 + 主线四）已基本收尾，仅剩 i18n 点单项；本计划聚焦「日常用得舒服」
 > 质量基线：沿用现状（126 PHPUnit / 157 Vitest / Playwright E2E 8 组 / pint / vue-tsc 严格），测试按需本地手跑，**无 CI**
 
@@ -73,7 +73,13 @@
   - 弹层渲染抽成共享 `suggestion-popup.ts`（斜杠/提及同源）
   - 验证：CommentTest+12 / DocumentMentionTest 5 例（152 PHPUnit 全绿）+ pint 绿
     + E2E 新增 comments.spec（13 组全绿）
-- [ ] **7. 文档模板**：新建时选「空白 / 会议纪要 / 周报 / 待办清单」，预置 Y.js 初始内容，复用现有管线
+- [x] **7. 文档模板** ✅（2026-09-30）
+  - `io/templates.ts`：会议纪要 / 周报 / 待办清单三个模板（Tiptap JSON 种子，
+    节点只用 StarterKit 现有类型，待办用 `[ ]` 文本前缀——md 导出导入天然往返，零新依赖）
+  - 复用 importFlow 管线（创建空文档带标题 → 跳编辑器 → 协同首帧 setContent），
+    新建 ▾ 菜单分隔线后三项入口
+  - 单测：`getSchema(getBaseExtensions())` 对每个模板 `nodeFromJSON + check()` 结构校验
+  - 验证：templates 4 例（161 Vitest 全绿）+ E2E template.spec（14 组全绿）
 - [ ] **8. PWA（离线壳）**：manifest + Service Worker 缓存静态资源，Y.js 本地变更队列等重连回放——与 CRDT 架构天然一对
 
 ## 第三梯队：按需点单
