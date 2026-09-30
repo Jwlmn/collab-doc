@@ -61,7 +61,7 @@ class Comment extends Model
     }
 
     /**
-     * 该根评论下的回复（一层，不再向下嵌套）。
+     * 直接回复该评论的评论（可多层；展示层级由前端封顶）。
      *
      * @return HasMany<Comment, $this>
      */

@@ -52,8 +52,43 @@ const visibleRoots = computed(() =>
   showResolved.value ? roots.value : roots.value.filter((root) => !root.resolved_at),
 )
 
-function repliesOf(rootId: number): Comment[] {
-  return comments.value.filter((comment) => comment.parent_id === rootId)
+/** id → 评论查表，供线程遍历取被回复者 */
+const commentById = computed(() => new Map(comments.value.map((comment) => [comment.id, comment])))
+
+/**
+ * 线程内全部回复（DFS 时间序）。
+ * 展示只有两层：根评论 + 回复列表，回复一律平级不再递归缩进，
+ * 层级关系由「回复 @对象」表达；target 即真实被回复评论。
+ */
+function flattenReplies(rootId: number): Array<{ comment: Comment; target: Comment | null }> {
+  const list: Array<{ comment: Comment; target: Comment | null }> = []
+  const walk = (parentId: number): void => {
+    for (const comment of comments.value) {
+      if (comment.parent_id !== parentId) continue
+      list.push({
+        comment,
+        target: commentById.value.get(parentId) ?? null,
+      })
+      walk(comment.id)
+    }
+  }
+  walk(rootId)
+  return list
+}
+
+/* ---------------- 一级线程折叠 ---------------- */
+
+/** 已折叠的一级线程根评论 id 集合 */
+const collapsedRootIds = ref<number[]>([])
+
+function isCollapsed(rootId: number): boolean {
+  return collapsedRootIds.value.includes(rootId)
+}
+
+function toggleCollapse(rootId: number): void {
+  collapsedRootIds.value = isCollapsed(rootId)
+    ? collapsedRootIds.value.filter((id) => id !== rootId)
+    : [...collapsedRootIds.value, rootId]
 }
 
 function startReply(root: Comment): void {
@@ -265,11 +300,20 @@ async function handleDelete(comment: Comment): Promise<void> {
   deletingId.value = comment.id
   try {
     await api.delete(`/documents/${props.documentId}/comments/${comment.id}`)
-    // 删根评论时回复随服务端 FK 级联消失，本地同步清掉
-    comments.value = comments.value.filter(
-      (item) => item.id !== comment.id && item.parent_id !== comment.id,
-    )
-    if (replyingTo.value?.id === comment.id) replyingTo.value = null
+    // 删祖先时后代随服务端 FK 级联消失，本地沿 parent 链递归清掉
+    const removed = new Set<number>([comment.id])
+    let grew = true
+    while (grew) {
+      grew = false
+      for (const item of comments.value) {
+        if (item.parent_id !== null && removed.has(item.parent_id) && !removed.has(item.id)) {
+          removed.add(item.id)
+          grew = true
+        }
+      }
+    }
+    comments.value = comments.value.filter((item) => !removed.has(item.id))
+    if (replyingTo.value && removed.has(replyingTo.value.id)) replyingTo.value = null
     message.success(t('comments.deleted'))
     emit('changed')
   } catch (error) {
@@ -354,22 +398,45 @@ async function handleDelete(comment: Comment): Promise<void> {
                   </template>
                 </div>
 
-                <!-- 一层回复缩进挂在根下 -->
-                <div v-if="repliesOf(root.id).length > 0" class="reply-list">
-                  <div v-for="reply in repliesOf(root.id)" :key="reply.id" class="comment-reply">
+                <div class="thread-actions">
+                  <n-button text size="tiny" @click="startReply(root)">{{ $t('comments.replyBtn') }}</n-button>
+                  <!-- 折叠/展开该一级线程的回复 -->
+                  <n-button
+                    v-if="flattenReplies(root.id).length > 0"
+                    text
+                    size="tiny"
+                    depth="3"
+                    @click="toggleCollapse(root.id)"
+                  >
+                    {{ isCollapsed(root.id)
+                      ? $t('comments.expandReplies', { count: flattenReplies(root.id).length })
+                      : $t('comments.collapseReplies') }}
+                  </n-button>
+                </div>
+
+                <!-- 回复：DFS 平铺为一层，与第二层平级（不递归缩进） -->
+                <div
+                  v-if="!isCollapsed(root.id) && flattenReplies(root.id).length > 0"
+                  class="reply-list"
+                >
+                  <div
+                    v-for="reply in flattenReplies(root.id)"
+                    :key="reply.comment.id"
+                    class="comment-reply"
+                  >
                     <div class="comment-meta">
                       <n-avatar round :size="20" color="#7986cb">
-                        {{ (reply.user.name ?? '?').slice(0, 1) }}
+                        {{ (reply.comment.user.name ?? '?').slice(0, 1) }}
                       </n-avatar>
-                      <span class="comment-author">{{ reply.user.name ?? $t('documents.unknownUser') }}</span>
-                      <span class="comment-time">{{ formatTime(reply.created_at) }}</span>
-                      <n-popconfirm v-if="canDelete(reply)" @positive-click="handleDelete(reply)">
+                      <span class="comment-author">{{ reply.comment.user.name ?? $t('documents.unknownUser') }}</span>
+                      <span class="comment-time">{{ formatTime(reply.comment.created_at) }}</span>
+                      <n-popconfirm v-if="canDelete(reply.comment)" @positive-click="handleDelete(reply.comment)">
                         <template #trigger>
                           <n-button
                             text
                             type="error"
                             size="tiny"
-                            :loading="deletingId === reply.id"
+                            :loading="deletingId === reply.comment.id"
                           >
                             {{ $t('comments.deleteBtn') }}
                           </n-button>
@@ -377,17 +444,29 @@ async function handleDelete(comment: Comment): Promise<void> {
                         {{ $t('comments.deleteReplyConfirm') }}
                       </n-popconfirm>
                     </div>
+                    <!-- 二级及更深回复：引用被回复消息内容，标明回的是哪一条；
+                         直接回根的不展示（上下文就是根卡片本身） -->
+                    <div v-if="reply.target && reply.target.id !== root.id" class="reply-quote">
+                      <span class="reply-quote-label">{{ $t('comments.replyTo', { name: reply.target.user.name ?? $t('documents.unknownUser') }) }}</span>
+                      <span class="reply-quote-text">
+                        <template v-for="(segment, index) in parseContent(reply.target.content)" :key="index">
+                          <span v-if="segment.type === 'text'">{{ segment.text }}</span>
+                          <span v-else class="mention-tag">@{{ segment.name }}</span>
+                        </template>
+                      </span>
+                    </div>
                     <div class="comment-content">
-                      <template v-for="(segment, index) in parseContent(reply.content)" :key="index">
+                      <template v-for="(segment, index) in parseContent(reply.comment.content)" :key="index">
                         <span v-if="segment.type === 'text'">{{ segment.text }}</span>
                         <span v-else class="mention-tag">@{{ segment.name }}</span>
                       </template>
                     </div>
+                    <div class="thread-actions">
+                      <n-button text size="tiny" @click="startReply(reply.comment)">
+                        {{ $t('comments.replyBtn') }}
+                      </n-button>
+                    </div>
                   </div>
-                </div>
-
-                <div class="thread-actions">
-                  <n-button text size="tiny" @click="startReply(root)">{{ $t('comments.replyBtn') }}</n-button>
                 </div>
               </div>
             </div>
@@ -520,10 +599,34 @@ async function handleDelete(comment: Comment): Promise<void> {
   background: var(--bg-surface);
   border-radius: 6px;
 }
+/* 二级回复的引用块：小字浅色，标明回的是哪一条 */
+.reply-quote {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-bottom: 4px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-3);
+  overflow: hidden;
+}
+.reply-quote-label {
+  flex: none;
+}
+.reply-quote-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: 0.85;
+}
 .comment-reply .comment-author {
   font-size: 13px;
 }
 .thread-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
   margin-top: 8px;
 }
 /* 回复上下文横幅 */

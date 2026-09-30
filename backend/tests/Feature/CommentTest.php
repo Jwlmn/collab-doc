@@ -190,7 +190,7 @@ class CommentTest extends TestCase
         ]);
     }
 
-    public function test_reply_to_reply_flattens_to_same_root(): void
+    public function test_reply_to_reply_nests_under_target(): void
     {
         $user = User::factory()->create();
         $document = Document::factory()->for($user)->create();
@@ -198,13 +198,33 @@ class CommentTest extends TestCase
         $root = Comment::factory()->for($document)->for($user)->create();
         $reply = Comment::factory()->for($document)->for($user)->create(['parent_id' => $root->id]);
 
+        // 第 2 层回复保留真实 parent_id（前端渲染时第 3 层起才与第 2 层平级）
         $this->actingAs($user)
             ->postJson("/api/documents/{$document->id}/comments", [
                 'content' => '回复的回复',
                 'parent_id' => $reply->id,
             ])
             ->assertCreated()
-            ->assertJsonPath('data.parent_id', $root->id);
+            ->assertJsonPath('data.parent_id', $reply->id);
+    }
+
+    public function test_deep_reply_keeps_real_parent_id(): void
+    {
+        $user = User::factory()->create();
+        $document = Document::factory()->for($user)->create();
+
+        $root = Comment::factory()->for($document)->for($user)->create();
+        $level1 = Comment::factory()->for($document)->for($user)->create(['parent_id' => $root->id]);
+        $level2 = Comment::factory()->for($document)->for($user)->create(['parent_id' => $level1->id]);
+
+        // 第 3 层及更深仍存真实被回复者，展示层级由前端封顶
+        $this->actingAs($user)
+            ->postJson("/api/documents/{$document->id}/comments", [
+                'content' => '第三层回复',
+                'parent_id' => $level2->id,
+            ])
+            ->assertCreated()
+            ->assertJsonPath('data.parent_id', $level2->id);
     }
 
     public function test_reply_parent_must_belong_to_same_document(): void

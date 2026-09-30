@@ -34,7 +34,8 @@ class CommentController extends Controller
     /**
      * 发表评论或回复（支持 @[姓名](user:ID) 提及标记）。
      *
-     * parent_id 指向根评论即为回复；对回复再回复会被压平挂到同一根下（只保留一层）。
+     * parent_id 即真实的被回复者，数据不限层级；前端渲染时把第 3 层起
+     * 显示为与第 2 层平级（缩进封顶），保证「回复 @对象」始终指向真实目标。
      */
     public function store(Request $request, Document $document): CommentResource
     {
@@ -50,12 +51,6 @@ class CommentController extends Controller
         ]);
 
         $parentId = $validated['parent_id'] ?? null;
-        if ($parentId !== null) {
-            /** @var Comment $parent */
-            $parent = Comment::query()->findOrFail($parentId);
-            // 一层扁平：对回复再回复挂回同一根
-            $parentId = $parent->parent_id ?? $parent->id;
-        }
 
         $mentionedIds = Comment::parseMentionIds($validated['content']);
         $existingIds = User::whereIn('id', $mentionedIds)->pluck('id')->all();

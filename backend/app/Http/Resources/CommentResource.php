@@ -17,7 +17,7 @@ class CommentResource extends JsonResource
         return [
             'id' => $this->id,
             'document_id' => $this->document_id,
-            // null = 根评论；非空 = 回复（前端按此分组成一层线程）
+            // null = 根评论；非空 = 被回复评论 id（真实线程层级，前端决定展示深度）
             'parent_id' => $this->parent_id,
             // 仅根评论有意义：非空即线程已解决
             'resolved_at' => $this->resolved_at?->toIso8601String(),
