@@ -10,6 +10,8 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Validation\Rules\Password;
 use Illuminate\Validation\ValidationException;
 
 class AuthController extends Controller
@@ -63,5 +65,43 @@ class AuthController extends Controller
     public function user(Request $request): UserResource
     {
         return new UserResource($request->user());
+    }
+
+    /**
+     * 更新个人资料（昵称 / 头像）。
+     */
+    public function update(Request $request): UserResource
+    {
+        $validated = $request->validate([
+            'name' => ['required', 'string', 'max:255'],
+            // 头像必须指向本服务的图片上传产物，拒绝外链（防追踪像素/混合内容）
+            'avatar_url' => [
+                'nullable',
+                'string',
+                'max:120',
+                'regex:^/api/images/[A-Za-z0-9._-]+\.(jpg|jpeg|png|gif|webp)$^',
+            ],
+        ]);
+
+        $request->user()->update($validated);
+
+        return new UserResource($request->user());
+    }
+
+    /**
+     * 修改密码（校验当前密码；成功后会话保持，其余令牌不动）。
+     */
+    public function updatePassword(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'current_password' => ['required', 'current_password'],
+            'password' => ['required', 'string', 'confirmed', Password::defaults()],
+        ]);
+
+        $request->user()->update([
+            'password' => Hash::make($validated['password']),
+        ]);
+
+        return response()->json(['message' => '密码已更新。']);
     }
 }

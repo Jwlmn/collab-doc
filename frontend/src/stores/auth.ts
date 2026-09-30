@@ -39,5 +39,14 @@ export const useAuthStore = defineStore('auth', () => {
     user.value = null
   }
 
-  return { user, initialized, fetchUser, login, register, logout }
+  /** 更新个人资料（昵称 / 头像），成功后同步本地用户 */
+  async function updateProfile(payload: {
+    name: string
+    avatar_url?: string | null
+  }): Promise<void> {
+    const { data } = await api.put('/user', payload)
+    user.value = data.data
+  }
+
+  return { user, initialized, fetchUser, login, register, logout, updateProfile }
 })

@@ -24,9 +24,13 @@ async function handleLogout() {
   }
 }
 
+const userMenuOptions = [{ key: 'settings', label: '设置' }, { key: 'logout', label: renderLogoutLabel }]
+
 function handleUserMenu(key: string) {
   if (key === 'logout') {
     void handleLogout()
+  } else if (key === 'settings') {
+    void router.push('/settings')
   }
 }
 </script>
@@ -40,8 +44,13 @@ function handleUserMenu(key: string) {
         <ThemeToggle />
         <template v-if="auth.user">
           <NotificationBell />
-          <n-dropdown :options="[{ key: 'logout', label: renderLogoutLabel }]" @select="handleUserMenu">
+          <n-dropdown :options="userMenuOptions" @select="handleUserMenu">
             <n-button text class="user-btn">
+              <template #icon>
+                <n-avatar :size="22" round :src="auth.user.avatar_url ?? undefined">
+                  {{ auth.user.name.slice(0, 1) }}
+                </n-avatar>
+              </template>
               {{ auth.user.name }}
             </n-button>
           </n-dropdown>

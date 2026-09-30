@@ -2,6 +2,8 @@ export interface User {
   id: number
   name: string
   email: string
+  /** 头像相对 URL（null/缺省 = 前端显示首字母色块） */
+  avatar_url?: string | null
   created_at?: string
 }
 
