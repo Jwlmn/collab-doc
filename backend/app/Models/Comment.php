@@ -6,6 +6,7 @@ use Database\Factories\CommentFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Comment extends Model
 {
@@ -18,8 +19,10 @@ class Comment extends Model
     protected $fillable = [
         'document_id',
         'user_id',
+        'parent_id',
         'content',
         'mentions',
+        'resolved_at',
     ];
 
     /**
@@ -29,6 +32,7 @@ class Comment extends Model
     {
         return [
             'mentions' => 'array',
+            'resolved_at' => 'datetime',
         ];
     }
 
@@ -46,6 +50,24 @@ class Comment extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    /**
+     * 所属根评论（null = 自身就是根）。
+     */
+    public function parent(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'parent_id');
+    }
+
+    /**
+     * 该根评论下的回复（一层，不再向下嵌套）。
+     *
+     * @return HasMany<Comment, $this>
+     */
+    public function replies(): HasMany
+    {
+        return $this->hasMany(self::class, 'parent_id');
     }
 
     /**

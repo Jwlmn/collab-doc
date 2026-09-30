@@ -19,6 +19,8 @@ const emit = defineEmits<{
   'update:show': [value: boolean]
   /** 抽屉打开并拉取评论后，通知父级未读已清零 */
   read: []
+  /** 评论集合或解决状态变化，通知父级刷新角标 */
+  changed: []
 }>()
 
 const auth = useAuthStore()
@@ -31,6 +33,50 @@ const loading = ref(false)
 const content = ref('')
 const submitting = ref(false)
 const deletingId = ref<number | null>(null)
+
+/* ---------------- 线程分组 / 解决 ---------------- */
+
+/** 已解决线程默认折叠，开关控制是否显示 */
+const showResolved = ref(false)
+/** 正在回复的根评论（null = 发新评论，底部输入框共用） */
+const replyingTo = ref<Comment | null>(null)
+
+const roots = computed(() => comments.value.filter((comment) => !comment.parent_id))
+
+const unresolvedCount = computed(() => roots.value.filter((root) => !root.resolved_at).length)
+const resolvedCount = computed(() => roots.value.length - unresolvedCount.value)
+
+const visibleRoots = computed(() =>
+  showResolved.value ? roots.value : roots.value.filter((root) => !root.resolved_at),
+)
+
+function repliesOf(rootId: number): Comment[] {
+  return comments.value.filter((comment) => comment.parent_id === rootId)
+}
+
+function startReply(root: Comment): void {
+  replyingTo.value = root
+  void nextTick(() => getTextarea()?.focus())
+}
+
+function cancelReply(): void {
+  replyingTo.value = null
+}
+
+async function handleResolve(root: Comment): Promise<void> {
+  const nextResolved = !root.resolved_at
+  try {
+    const { data } = await api.post(
+      `/documents/${props.documentId}/comments/${root.id}/resolve`,
+      { resolved: nextResolved },
+    )
+    root.resolved_at = data.data.resolved_at
+    message.success(nextResolved ? '线程已标记解决' : '线程已重新打开')
+    emit('changed')
+  } catch (error) {
+    message.error(getApiErrorMessage(error))
+  }
+}
 
 const textareaRef = ref<HTMLTextAreaElement | null>(null)
 const mentionQuery = ref<string | null>(null)
@@ -55,6 +101,10 @@ watch(
       }
       await nextTick()
       getTextarea()?.focus()
+    } else {
+      // 关抽屉丢弃回复上下文，下次打开是全新评论
+      replyingTo.value = null
+      closeMentionPopup()
     }
   },
 )
@@ -185,10 +235,19 @@ async function handleSubmit(): Promise<void> {
   try {
     const { data } = await api.post(`/documents/${props.documentId}/comments`, {
       content: text,
+      ...(replyingTo.value ? { parent_id: replyingTo.value.id } : {}),
     })
     comments.value.push(data.data)
     content.value = ''
+    replyingTo.value = null
     closeMentionPopup()
+    // 自己刚发的评论不该算未读：推进已读水位后再让父级重算角标
+    try {
+      await api.post(`/documents/${props.documentId}/comments/read`)
+    } catch {
+      /* 水位推进失败不阻塞发送 */
+    }
+    emit('changed')
     await nextTick()
     if (listWrapRef.value) {
       listWrapRef.value.scrollTop = listWrapRef.value.scrollHeight
@@ -204,8 +263,13 @@ async function handleDelete(comment: Comment): Promise<void> {
   deletingId.value = comment.id
   try {
     await api.delete(`/documents/${props.documentId}/comments/${comment.id}`)
-    comments.value = comments.value.filter((item) => item.id !== comment.id)
+    // 删根评论时回复随服务端 FK 级联消失，本地同步清掉
+    comments.value = comments.value.filter(
+      (item) => item.id !== comment.id && item.parent_id !== comment.id,
+    )
+    if (replyingTo.value?.id === comment.id) replyingTo.value = null
     message.success('评论已删除')
+    emit('changed')
   } catch (error) {
     message.error(getApiErrorMessage(error))
   } finally {
@@ -229,40 +293,111 @@ async function handleDelete(comment: Comment): Promise<void> {
               description="还没有评论，输入 @ 可提及协作者"
               style="margin-top: 48px"
             />
+            <!-- 有评论但当前视图为空（全被「隐藏已解决」滤掉）时仍保留控制行，
+                 否则开关会跟着空态一起消失，用户再也打不开已解决线程 -->
             <div v-else class="comment-list">
-            <div v-for="comment in comments" :key="comment.id" class="comment-item">
-              <div class="comment-meta">
-                <n-avatar round :size="28" color="#4db6ac">
-                  {{ (comment.user.name ?? '?').slice(0, 1) }}
-                </n-avatar>
-                <span class="comment-author">{{ comment.user.name ?? '未知用户' }}</span>
-                <span class="comment-time">{{ formatTime(comment.created_at) }}</span>
-                <n-popconfirm v-if="canDelete(comment)" @positive-click="handleDelete(comment)">
-                  <template #trigger>
-                    <n-button
-                      text
-                      type="error"
-                      size="tiny"
-                      :loading="deletingId === comment.id"
-                    >
-                      删除
-                    </n-button>
+              <!-- 控制行：未解决数 + 已解决线程开关 -->
+              <div v-if="roots.length > 0" class="list-controls">
+                <n-text depth="3" class="controls-count">{{ unresolvedCount }} 条未解决</n-text>
+                <label v-if="resolvedCount > 0" class="controls-toggle">
+                  <n-switch
+                    v-model:value="showResolved"
+                    size="small"
+                    aria-label="显示已解决线程"
+                  />
+                  显示已解决（{{ resolvedCount }}）
+                </label>
+              </div>
+
+              <div
+                v-if="visibleRoots.length === 0 && !loading"
+                class="all-resolved-hint"
+              >
+                线程都已解决 🎉 打开上方开关可回看
+              </div>
+
+              <div
+                v-for="root in visibleRoots"
+                :key="root.id"
+                class="comment-item"
+                :class="{ resolved: !!root.resolved_at }"
+              >
+                <div class="comment-meta">
+                  <n-avatar round :size="28" color="#4db6ac">
+                    {{ (root.user.name ?? '?').slice(0, 1) }}
+                  </n-avatar>
+                  <span class="comment-author">{{ root.user.name ?? '未知用户' }}</span>
+                  <span class="comment-time">{{ formatTime(root.created_at) }}</span>
+                  <n-tag v-if="root.resolved_at" size="tiny" type="success" round>
+                    ✓ 已解决
+                  </n-tag>
+                  <n-button text size="tiny" @click="handleResolve(root)">
+                    {{ root.resolved_at ? '重新打开' : '解决' }}
+                  </n-button>
+                  <n-popconfirm v-if="canDelete(root)" @positive-click="handleDelete(root)">
+                    <template #trigger>
+                      <n-button text type="error" size="tiny" :loading="deletingId === root.id">
+                        删除
+                      </n-button>
+                    </template>
+                    确定删除该评论吗？回复会一并删除。
+                  </n-popconfirm>
+                </div>
+                <div class="comment-content">
+                  <template v-for="(segment, index) in parseContent(root.content)" :key="index">
+                    <span v-if="segment.type === 'text'">{{ segment.text }}</span>
+                    <span v-else class="mention-tag">@{{ segment.name }}</span>
                   </template>
-                  确定删除该评论吗？
-                </n-popconfirm>
+                </div>
+
+                <!-- 一层回复缩进挂在根下 -->
+                <div v-if="repliesOf(root.id).length > 0" class="reply-list">
+                  <div v-for="reply in repliesOf(root.id)" :key="reply.id" class="comment-reply">
+                    <div class="comment-meta">
+                      <n-avatar round :size="20" color="#7986cb">
+                        {{ (reply.user.name ?? '?').slice(0, 1) }}
+                      </n-avatar>
+                      <span class="comment-author">{{ reply.user.name ?? '未知用户' }}</span>
+                      <span class="comment-time">{{ formatTime(reply.created_at) }}</span>
+                      <n-popconfirm v-if="canDelete(reply)" @positive-click="handleDelete(reply)">
+                        <template #trigger>
+                          <n-button
+                            text
+                            type="error"
+                            size="tiny"
+                            :loading="deletingId === reply.id"
+                          >
+                            删除
+                          </n-button>
+                        </template>
+                        确定删除该回复吗？
+                      </n-popconfirm>
+                    </div>
+                    <div class="comment-content">
+                      <template v-for="(segment, index) in parseContent(reply.content)" :key="index">
+                        <span v-if="segment.type === 'text'">{{ segment.text }}</span>
+                        <span v-else class="mention-tag">@{{ segment.name }}</span>
+                      </template>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="thread-actions">
+                  <n-button text size="tiny" @click="startReply(root)">回复</n-button>
+                </div>
               </div>
-              <div class="comment-content">
-                <template v-for="(segment, index) in parseContent(comment.content)" :key="index">
-                  <span v-if="segment.type === 'text'">{{ segment.text }}</span>
-                  <span v-else class="mention-tag">@{{ segment.name }}</span>
-                </template>
-              </div>
-            </div>
             </div>
           </n-spin>
         </div>
 
         <div class="comment-input-wrap">
+          <!-- 回复上下文横幅 -->
+          <div v-if="replyingTo" class="reply-banner">
+            <n-text depth="2" class="reply-banner-text">
+              正在回复 <strong>{{ replyingTo.user.name ?? '未知用户' }}</strong>
+            </n-text>
+            <n-button text size="tiny" @click="cancelReply">取消</n-button>
+          </div>
           <div
             v-if="mentionPopupVisible"
             id="mention-popup"
@@ -313,7 +448,7 @@ async function handleDelete(comment: Comment): Promise<void> {
             style="margin-top: 8px"
             @click="handleSubmit"
           >
-            发送评论
+            {{ replyingTo ? '发送回复' : '发送评论' }}
           </n-button>
         </div>
       </div>
@@ -346,6 +481,70 @@ async function handleDelete(comment: Comment): Promise<void> {
   padding: 12px;
   background: var(--bg-muted);
   border-radius: 8px;
+}
+.comment-item.resolved {
+  /* 已解决线程（开关打开时）弱化呈现 */
+  opacity: 0.72;
+}
+/* 控制行：未解决数靠左，显示已解决开关靠右 */
+.list-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 12px;
+}
+.controls-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  color: var(--text-2);
+}
+/* 回复缩进：左侧竖线区分线程层级 */
+.reply-list {
+  margin-top: 10px;
+  padding-left: 12px;
+  border-left: 2px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.comment-reply {
+  padding: 8px 10px;
+  background: var(--bg-surface);
+  border-radius: 6px;
+}
+.comment-reply .comment-author {
+  font-size: 13px;
+}
+.thread-actions {
+  margin-top: 8px;
+}
+/* 回复上下文横幅 */
+.reply-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding: 6px 10px;
+  background: var(--bg-muted);
+  border-radius: 6px;
+  font-size: 13px;
+}
+.reply-banner-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.all-resolved-hint {
+  padding: 24px 0;
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-3);
 }
 .comment-meta {
   display: flex;

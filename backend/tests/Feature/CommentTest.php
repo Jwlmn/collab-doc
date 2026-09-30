@@ -165,4 +165,135 @@ class CommentTest extends TestCase
 
         $this->assertDatabaseHas('comments', ['id' => $commentOfA->id]);
     }
+
+    /* ---------------- 线程回复 ---------------- */
+
+    public function test_reply_threads_under_root_comment(): void
+    {
+        $user = User::factory()->create();
+        $document = Document::factory()->for($user)->create();
+
+        $root = Comment::factory()->for($document)->for($user)->create(['content' => '根评论']);
+
+        $this->actingAs($user)
+            ->postJson("/api/documents/{$document->id}/comments", [
+                'content' => '这是回复',
+                'parent_id' => $root->id,
+            ])
+            ->assertCreated()
+            ->assertJsonPath('data.parent_id', $root->id);
+
+        $this->assertDatabaseHas('comments', [
+            'document_id' => $document->id,
+            'content' => '这是回复',
+            'parent_id' => $root->id,
+        ]);
+    }
+
+    public function test_reply_to_reply_flattens_to_same_root(): void
+    {
+        $user = User::factory()->create();
+        $document = Document::factory()->for($user)->create();
+
+        $root = Comment::factory()->for($document)->for($user)->create();
+        $reply = Comment::factory()->for($document)->for($user)->create(['parent_id' => $root->id]);
+
+        $this->actingAs($user)
+            ->postJson("/api/documents/{$document->id}/comments", [
+                'content' => '回复的回复',
+                'parent_id' => $reply->id,
+            ])
+            ->assertCreated()
+            ->assertJsonPath('data.parent_id', $root->id);
+    }
+
+    public function test_reply_parent_must_belong_to_same_document(): void
+    {
+        $user = User::factory()->create();
+        $documentA = Document::factory()->for($user)->create();
+        $documentB = Document::factory()->for($user)->create();
+        $foreignComment = Comment::factory()->for($documentB)->for($user)->create();
+
+        $this->actingAs($user)
+            ->postJson("/api/documents/{$documentA->id}/comments", [
+                'content' => '跨文档回复',
+                'parent_id' => $foreignComment->id,
+            ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('parent_id');
+    }
+
+    /* ---------------- 解决标记 ---------------- */
+
+    public function test_root_comment_can_be_resolved_and_reopened(): void
+    {
+        $user = User::factory()->create();
+        $document = Document::factory()->for($user)->create();
+        $root = Comment::factory()->for($document)->for($user)->create();
+
+        $this->actingAs($user)
+            ->postJson("/api/documents/{$document->id}/comments/{$root->id}/resolve", ['resolved' => true])
+            ->assertOk()
+            ->assertJsonPath('data.resolved_at', fn ($value) => $value !== null);
+
+        $this->assertDatabaseHas('comments', ['id' => $root->id]);
+        $this->assertNotNull($root->fresh()->resolved_at);
+
+        $this->actingAs($user)
+            ->postJson("/api/documents/{$document->id}/comments/{$root->id}/resolve", ['resolved' => false])
+            ->assertOk();
+
+        $this->assertNull($root->fresh()->resolved_at);
+    }
+
+    public function test_reply_cannot_be_resolved(): void
+    {
+        $user = User::factory()->create();
+        $document = Document::factory()->for($user)->create();
+        $root = Comment::factory()->for($document)->for($user)->create();
+        $reply = Comment::factory()->for($document)->for($user)->create(['parent_id' => $root->id]);
+
+        $this->actingAs($user)
+            ->postJson("/api/documents/{$document->id}/comments/{$reply->id}/resolve", ['resolved' => true])
+            ->assertStatus(422);
+
+        $this->assertNull($reply->fresh()->resolved_at);
+    }
+
+    public function test_non_member_cannot_resolve_comment(): void
+    {
+        $owner = User::factory()->create();
+        $stranger = User::factory()->create();
+        $document = Document::factory()->for($owner)->create();
+        $root = Comment::factory()->for($document)->for($owner)->create();
+
+        $this->actingAs($stranger)
+            ->postJson("/api/documents/{$document->id}/comments/{$root->id}/resolve", ['resolved' => true])
+            ->assertForbidden();
+
+        $this->assertNull($root->fresh()->resolved_at);
+    }
+
+    public function test_unread_endpoint_reports_unresolved_root_count(): void
+    {
+        $user = User::factory()->create();
+        $document = Document::factory()->for($user)->create();
+        $root = Comment::factory()->for($document)->for($user)->create();
+        Comment::factory()->for($document)->for($user)->create(['parent_id' => $root->id]);
+
+        // 回复不计入未解决数：只数根
+        $this->actingAs($user)
+            ->getJson("/api/documents/{$document->id}/comments/unread")
+            ->assertOk()
+            ->assertJsonPath('data.unresolved', 1);
+
+        $this->actingAs($user)
+            ->postJson("/api/documents/{$document->id}/comments/{$root->id}/resolve", ['resolved' => true])
+            ->assertOk();
+
+        $this->actingAs($user)
+            ->getJson("/api/documents/{$document->id}/comments/unread")
+            ->assertOk()
+            ->assertJsonPath('data.unresolved', 0);
+    }
 }

@@ -8,6 +8,7 @@ import Collaboration from '@tiptap/extension-collaboration'
 import CollaborationCaret from '@tiptap/extension-collaboration-caret'
 import { BubbleMenu } from '@tiptap/extension-bubble-menu'
 import { SlashCommand, setImageHandler } from '../extensions/slash-command'
+import { MentionSuggestion, setMentionContext } from '../extensions/mention'
 import { getBaseExtensions } from '../io/extensions'
 import { firstImageFile, uploadImage } from '../utils/upload'
 import { HocuspocusProvider } from '@hocuspocus/provider'
@@ -76,7 +77,17 @@ const helpVisible = ref(false)
 const linkVisible = ref(false)
 const linkUrl = ref('https://')
 const shareVisible = ref(false)
-const unreadComments = ref(0)
+/** 评论角标 = 未读数 + 未解决线程数（都算「有待处理」） */
+const commentBadge = ref(0)
+
+async function fetchCommentBadge(): Promise<void> {
+  try {
+    const { data } = await api.get(`/documents/${docId.value}/comments/unread`)
+    commentBadge.value = (data.data.count ?? 0) + (data.data.unresolved ?? 0)
+  } catch {
+    commentBadge.value = 0
+  }
+}
 const exporting = ref(false)
 
 /** 导出当前富文本文档为 md / docx / PDF（打印对话框另存） */
@@ -423,6 +434,8 @@ onMounted(async () => {
   window.addEventListener('keydown', handleKeydown)
   // 斜杠菜单的「图片」项：接到这里（有 message 上下文）
   setImageHandler((ed) => pickImage(ed))
+  // @提及上报需要当前用户与文档 id（扩展拿不到组件状态）
+  setMentionContext({ documentId: docId.value, currentUserId: auth.user?.id ?? null })
 
   try {
     if (isShare.value) {
@@ -465,14 +478,9 @@ onMounted(async () => {
     },
   )
 
-  // 评论未读徽标（访客无权读评论，跳过 —— 调用会 401）
+  // 评论徽标：访客无权读评论，跳过 —— 调用会 401
   if (!isShare.value) {
-    try {
-      const { data } = await api.get(`/documents/${docId.value}/comments/unread`)
-      unreadComments.value = data.data.count
-    } catch {
-      unreadComments.value = 0
-    }
+    await fetchCommentBadge()
   }
 
   // 协作连接令牌：访客走分享端点（viewer 只读），成员走已鉴权端点
@@ -570,7 +578,8 @@ onMounted(async () => {
         },
       }),
       // 只读模式不注册斜杠命令
-      ...(isReadonly.value ? [] : [SlashCommand]),
+      // 只读模式不注册斜杠命令与 @提及建议
+      ...(isReadonly.value ? [] : [SlashCommand, MentionSuggestion]),
     ],
     editorProps: {
       attributes: {
@@ -633,6 +642,7 @@ onBeforeUnmount(() => {
   editor.value = null
   provider = null
   ydoc = null
+  setMentionContext(null)
   document.title = PAGE_TITLE
 })
 
@@ -686,7 +696,7 @@ async function handleRename() {
           </n-button>
         </n-dropdown>
         <!-- 访客无权读评论/版本（接口会 401），两个入口整体隐藏 -->
-        <n-badge v-if="!isShare" :value="unreadComments" :max="99" :show="unreadComments > 0">
+        <n-badge v-if="!isShare" :value="commentBadge" :max="99" :show="commentBadge > 0">
           <n-button quaternary size="small" @click="commentDrawerVisible = true">评论</n-button>
         </n-badge>
         <n-button v-if="!isShare" quaternary size="small" @click="versionDrawerVisible = true">版本历史</n-button>
@@ -867,7 +877,8 @@ async function handleRename() {
       v-model:show="commentDrawerVisible"
       :document-id="docId"
       :can-manage="auth.user?.id === meta?.user_id"
-      @read="unreadComments = 0"
+      @read="fetchCommentBadge"
+      @changed="fetchCommentBadge"
     />
 
     <ShareModal v-if="!isShare" v-model:show="shareVisible" :document-id="docId" />
@@ -901,6 +912,7 @@ async function handleRename() {
           <tr><td><kbd>⌘/Ctrl + ⏎</kbd></td><td>打开评论抽屉</td></tr>
           <tr><td><kbd>⇧⌘/Ctrl + S</kbd></td><td>删除线</td></tr>
           <tr><td><kbd>⇧⌘/Ctrl + H</kbd></td><td>高亮</td></tr>
+          <tr><td><kbd>@</kbd></td><td>提及协作者（发送站内通知）</td></tr>
           <tr><td><kbd>/</kbd></td><td>斜杠命令菜单（标题/列表/引用…）</td></tr>
           <tr><td><kbd>/</kbd> 或 <kbd>⌘/Ctrl + K</kbd></td><td>聚焦搜索（文档列表页）</td></tr>
           <tr><td><kbd>Esc</kbd></td><td>关闭弹层</td></tr>
@@ -1088,6 +1100,14 @@ async function handleRename() {
   background: #fff3bf;
   border-radius: 2px;
   padding: 0 1px;
+}
+/* @提及：与评论区 .mention-tag 同一观感 */
+:deep(.doc-editor-content .doc-mention) {
+  color: #2080f0;
+  background: rgba(32, 128, 240, 0.1);
+  border-radius: 4px;
+  padding: 0 4px;
+  font-weight: 500;
 }
 :deep(.collaboration-carets__caret) {
   position: relative;

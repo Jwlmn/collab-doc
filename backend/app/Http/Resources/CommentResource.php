@@ -17,6 +17,10 @@ class CommentResource extends JsonResource
         return [
             'id' => $this->id,
             'document_id' => $this->document_id,
+            // null = 根评论；非空 = 回复（前端按此分组成一层线程）
+            'parent_id' => $this->parent_id,
+            // 仅根评论有意义：非空即线程已解决
+            'resolved_at' => $this->resolved_at?->toIso8601String(),
             'content' => $this->content,
             'mentions' => $this->mentions ?? [],
             'user' => [

@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\CollabTokenController;
 use App\Http\Controllers\Api\CommentController;
 use App\Http\Controllers\Api\DocumentController;
 use App\Http\Controllers\Api\DocumentMemberController;
+use App\Http\Controllers\Api\DocumentMentionController;
 use App\Http\Controllers\Api\DocumentVersionController;
 use App\Http\Controllers\Api\ImageController;
 use App\Http\Controllers\Api\InviteController;
@@ -67,6 +68,10 @@ Route::middleware('auth:sanctum')->group(function () {
             ->only(['index', 'store', 'destroy']);
         Route::get('documents/{document}/comments/unread', [CommentController::class, 'unread']);
         Route::post('documents/{document}/comments/read', [CommentController::class, 'markRead']);
+        Route::post('documents/{document}/comments/{comment}/resolve', [CommentController::class, 'resolve']);
+
+        // 编辑器正文 @提及 上报（幂等去重后发站内通知）
+        Route::post('/documents/{document}/mentions', [DocumentMentionController::class, 'store']);
 
         // 须在 {member} 绑定路由之前注册，避免被 members/{member} 吞掉
         Route::get('documents/{document}/members/search', [DocumentMemberController::class, 'searchInvitees']);

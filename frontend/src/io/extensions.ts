@@ -4,6 +4,7 @@ import Image from '@tiptap/extension-image'
 import Highlight from '@tiptap/extension-highlight'
 import TextAlign from '@tiptap/extension-text-align'
 import { Color, TextStyle } from '@tiptap/extension-text-style'
+import { MentionMark } from '../extensions/mention'
 import type { Extensions } from '@tiptap/core'
 
 /**
@@ -34,6 +35,8 @@ export function getBaseExtensions(): Extensions {
     Color,
     Highlight.configure({ multicolor: true }),
     TextAlign.configure({ types: ['heading', 'paragraph'], alignments: ['left', 'center', 'right'] }),
+    // @提及标记：进 schema 保证导入/协作/历史一致；`@` 建议插件由编辑器视图按需注册
+    MentionMark,
     TableKit,
     Image.configure({ allowBase64: false, inline: true }),
   ]

@@ -1,6 +1,8 @@
 import { Extension } from '@tiptap/core'
+import { PluginKey } from 'prosemirror-state'
 import type { ChainedCommands, Editor } from '@tiptap/core'
 import Suggestion from '@tiptap/suggestion'
+import { createSuggestionPopup } from './suggestion-popup'
 
 /**
  * 图片条目的处理器由编辑器视图注册（那里能拿到 Naive 的 message 上下文，
@@ -83,132 +85,6 @@ function filterItems(query: string): SlashItem[] {
   )
 }
 
-/**
- * 纯 DOM 渲染的斜杠菜单（挂 body，样式在 main.css 的 .slash-menu-*）。
- * 避开 VueRenderer 的应用上下文传递问题。
- */
-function createSlashPopup() {
-  let root: HTMLDivElement | null = null
-  let items: SlashItem[] = []
-  let selectedIndex = 0
-  let runCommand: ((item: SlashItem) => void) | null = null
-
-  function ensureRoot(): HTMLDivElement {
-    if (root) return root
-    root = document.createElement('div')
-    root.className = 'slash-menu'
-    root.style.display = 'none'
-    document.body.appendChild(root)
-    return root
-  }
-
-  function hide(): void {
-    if (root) root.style.display = 'none'
-    runCommand = null
-  }
-
-  function renderItems(): void {
-    const el = ensureRoot()
-    el.innerHTML = ''
-
-    items.forEach((item, index) => {
-      const row = document.createElement('div')
-      row.className = 'slash-menu-item' + (index === selectedIndex ? ' active' : '')
-      row.textContent = item.title
-
-      row.addEventListener('mousedown', (event) => {
-        event.preventDefault()
-        runCommand?.(item)
-        hide()
-      })
-
-      el.appendChild(row)
-    })
-  }
-
-  function position(rect: DOMRect | null): void {
-    if (!rect || !root) return
-    const margin = 8
-    let top = rect.bottom + 6
-    let left = rect.left
-
-    const width = root.offsetWidth || 220
-    const height = root.offsetHeight || 160
-
-    if (left + width > window.innerWidth - margin) {
-      left = Math.max(margin, window.innerWidth - width - margin)
-    }
-    if (top + height > window.innerHeight - margin) {
-      top = Math.max(margin, rect.top - height - 6)
-    }
-
-    root.style.top = `${top}px`
-    root.style.left = `${left}px`
-  }
-
-  function show(props: {
-    items: SlashItem[]
-    clientRect?: (() => DOMRect | null) | null
-    command: (item: SlashItem) => void
-  }): void {
-    items = props.items
-    selectedIndex = 0
-    runCommand = props.command
-
-    if (items.length === 0) {
-      hide()
-      return
-    }
-
-    const el = ensureRoot()
-    renderItems()
-    el.style.display = 'block'
-    position(props.clientRect?.() ?? null)
-  }
-
-  function update(props: {
-    items: SlashItem[]
-    clientRect?: (() => DOMRect | null) | null
-    command: (item: SlashItem) => void
-  }): void {
-    show(props)
-  }
-
-  return {
-    onStart: show,
-    onUpdate: update,
-    onExit: hide,
-    onKeyDown: ({ event }: { event: KeyboardEvent }): boolean => {
-      if (!root || root.style.display === 'none') return false
-
-      switch (event.key) {
-        case 'ArrowDown':
-          selectedIndex = (selectedIndex + 1) % Math.max(items.length, 1)
-          renderItems()
-          return true
-        case 'ArrowUp':
-          selectedIndex = (selectedIndex - 1 + items.length) % Math.max(items.length, 1)
-          renderItems()
-          return true
-        case 'Enter': {
-          const item = items[selectedIndex]
-          if (item && runCommand) {
-            runCommand(item)
-            hide()
-            return true
-          }
-          return false
-        }
-        case 'Escape':
-          hide()
-          return true
-        default:
-          return false
-      }
-    },
-  }
-}
-
 /** 编辑器 `/` 斜杠命令扩展（只读模式不要注册） */
 export const SlashCommand = Extension.create({
   name: 'slashCommand',
@@ -217,6 +93,9 @@ export const SlashCommand = Extension.create({
     return [
       Suggestion<SlashItem, SlashItem>({
         editor: this.editor,
+        // 与 @提及 的 suggestion 必须用不同 pluginKey：默认同名 key 会让
+        // ProseMirror 报「Adding different instances of a keyed plugin」
+        pluginKey: new PluginKey('slashSuggestion'),
         char: '/',
         startOfLine: false,
         minQueryLength: 0,
@@ -233,7 +112,7 @@ export const SlashCommand = Extension.create({
           props.command(chain).run()
         },
         items: ({ query }) => filterItems(query),
-        render: () => createSlashPopup(),
+        render: () => createSuggestionPopup<SlashItem>(),
       }),
     ]
   },

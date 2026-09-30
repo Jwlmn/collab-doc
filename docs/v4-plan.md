@@ -1,6 +1,6 @@
 # v4 开发计划 ——「让文档好管理，让界面有夜间模式」
 
-> 状态：**进行中**（2026-09-30 立项）；✅ 第 1–5 项 已完成（深色模式 / 文档置顶 / 富文本增强 / PDF 打印导出 / 设置页，2026-09-30）
+> 状态：**进行中**（2026-09-30 立项）；✅ 第 1–6 项 已完成（深色模式 / 文档置顶 / 富文本增强 / PDF 打印导出 / 设置页 / 评论进阶，2026-09-30）
 > 前情：v3（B1–B3 + 主线四）已基本收尾，仅剩 i18n 点单项；本计划聚焦「日常用得舒服」
 > 质量基线：沿用现状（126 PHPUnit / 157 Vitest / Playwright E2E 8 组 / pint / vue-tsc 严格），测试按需本地手跑，**无 CI**
 
@@ -62,7 +62,17 @@
   - useTheme 重构成 `useColorMode` 三态（store 即偏好，`auto` 与防黑帧脚本天然兼容，
     同页多实例经 StorageEvent 同步）；顶栏用户菜单加「设置」+ 头像显示
   - 验证：ProfileTest 6 例（140 PHPUnit 全绿）+ pint 绿 + E2E 新增 settings.spec（12 组全绿）
-- [ ] **6. 评论进阶**：回复（thread）+ 标记已解决 + 未解决数角标；@提及打通到编辑器内
+- [x] **6. 评论进阶** ✅（2026-09-30）
+  - 一层回复：`comments.parent_id`（根删级联删回复，对回复再回复压平挂回根）
+  - 解决标记：`resolved_at`（仅根可操作）；抽屉默认折叠已解决线程 + 开关回看 +
+    「N 条未解决」控制行；顶栏角标 = 未读数 + 未解决线程数
+  - 编辑器内 @提及：自定义 **mention mark**（文字即 `@姓名`，md/docx 导出天然降级纯文本、
+    搜索可命中）+ `@` 建议弹层（复用斜杠基建，**独立 pluginKey**——同名 key 会炸编辑器创建）
+    + 选中即上报 `POST /documents/{id}/mentions`（`document_mentions` pivot 幂等去重，
+    `DocumentMentionNotification` 站内通知，前端发起、不动协作服务器）
+  - 弹层渲染抽成共享 `suggestion-popup.ts`（斜杠/提及同源）
+  - 验证：CommentTest+12 / DocumentMentionTest 5 例（152 PHPUnit 全绿）+ pint 绿
+    + E2E 新增 comments.spec（13 组全绿）
 - [ ] **7. 文档模板**：新建时选「空白 / 会议纪要 / 周报 / 待办清单」，预置 Y.js 初始内容，复用现有管线
 - [ ] **8. PWA（离线壳）**：manifest + Service Worker 缓存静态资源，Y.js 本地变更队列等重连回放——与 CRDT 架构天然一对
 

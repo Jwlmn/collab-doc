@@ -71,6 +71,10 @@ export interface CollabToken {
 export interface Comment {
   id: number
   document_id: number
+  /** null = 根评论；非空 = 回复（一层线程，前端按此分组） */
+  parent_id?: number | null
+  /** 仅根评论：非空即线程已解决 */
+  resolved_at?: string | null
   content: string
   mentions: number[]
   user: { id: number | null; name: string | null }
