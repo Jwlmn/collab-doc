@@ -290,10 +290,12 @@ async function handleDelete(comment: Comment): Promise<void> {
              列表被压成一行、输入区下方留出大片空白 -->
         <div ref="listWrapRef" class="comment-list-wrap">
           <n-spin :show="loading" class="list-spin">
+            <!-- 用 padding 而非 margin：margin 会穿透 .list-spin（无边框/内边距）
+                 顶高整个 min-height:100% 容器，空态无内容时凭空多出 48px 滚动条 -->
             <n-empty
               v-if="!loading && comments.length === 0"
               :description="$t('comments.empty')"
-              style="margin-top: 48px"
+              style="padding-top: 48px"
             />
             <!-- 有评论但当前视图为空（全被「隐藏已解决」滤掉）时仍保留控制行，
                  否则开关会跟着空态一起消失，用户再也打不开已解决线程 -->
