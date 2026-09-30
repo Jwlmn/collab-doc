@@ -1,11 +1,15 @@
 <script setup lang="ts">
 import { useRouter } from 'vue-router'
+import ThemeToggle from '../components/ThemeToggle.vue'
 
 const router = useRouter()
 </script>
 
 <template>
   <div class="not-found">
+    <div class="not-found-theme-toggle">
+      <ThemeToggle />
+    </div>
     <n-result status="404" title="页面不存在" description="你访问的页面不存在或已被删除">
       <template #footer>
         <n-space justify="center">
@@ -19,11 +23,17 @@ const router = useRouter()
 
 <style scoped>
 .not-found {
+  position: relative;
   min-height: 100vh;
   min-height: 100dvh;
   display: flex;
   align-items: center;
   justify-content: center;
   background: var(--bg-page);
+}
+.not-found-theme-toggle {
+  position: absolute;
+  top: 16px;
+  right: 24px;
 }
 </style>

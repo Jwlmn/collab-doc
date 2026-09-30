@@ -20,6 +20,7 @@ import VersionDrawer from '../components/VersionDrawer.vue'
 import CommentDrawer from '../components/CommentDrawer.vue'
 import EditorToolbar from '../components/EditorToolbar.vue'
 import ShareModal from '../components/ShareModal.vue'
+import ThemeToggle from '../components/ThemeToggle.vue'
 import { useImportFlowStore } from '../stores/importFlow'
 import { useAutoSnapshot } from '../composables/useAutoSnapshot'
 import { serializeMarkdown } from '../io/markdown'
@@ -643,6 +644,7 @@ async function handleRename() {
         <n-tag v-if="isReadonly" size="small" type="warning" round>🔒 只读</n-tag>
       </n-space>
       <n-space align="center" size="small" :wrap="true">
+        <ThemeToggle />
         <n-button quaternary size="small" aria-label="?（快捷键说明）" @click="helpVisible = true">?</n-button>
         <n-button v-if="canRename" quaternary size="small" @click="shareVisible = true">共享</n-button>
         <n-dropdown :options="exportOptions" :disabled="exporting" @select="handleExport">
@@ -953,7 +955,9 @@ async function handleRename() {
   align-items: center;
   gap: 2px;
   padding: 4px 6px;
-  background: #1f2329;
+  /* 跟随主题的浮层底色：浅色下白底深字、深色下深底浅字（原黑底在深色主题下与页面糊成一片） */
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
   border-radius: 6px;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.24);
   z-index: 20;
@@ -975,6 +979,7 @@ async function handleRename() {
   font-size: 16px;
   line-height: 1.75;
   min-height: 60vh;
+  color: var(--text-1);
 }
 :deep(.doc-editor-content > h1) {
   font-size: 2em;
@@ -997,26 +1002,26 @@ async function handleRename() {
   margin: 0.4em 0;
 }
 :deep(.doc-editor-content > blockquote) {
-  border-left: 3px solid #d0d3d9;
+  border-left: 3px solid var(--border-strong);
   margin: 0.6em 0;
   padding-left: 1em;
-  color: #666;
+  color: var(--text-2);
 }
 :deep(.doc-editor-content > pre) {
-  background: #f4f5f7;
+  background: var(--bg-muted);
   border-radius: 6px;
   padding: 12px 16px;
   overflow-x: auto;
 }
 :deep(.doc-editor-content > code) {
-  background: #f4f5f7;
+  background: var(--bg-muted);
   border-radius: 3px;
   padding: 2px 5px;
   font-size: 0.9em;
 }
 :deep(.doc-editor-content > hr) {
   border: none;
-  border-top: 1px solid #e5e6eb;
+  border-top: 1px solid var(--border-subtle);
   margin: 1.5em 0;
 }
 :deep(.collaboration-carets__caret) {
@@ -1043,8 +1048,8 @@ async function handleRename() {
   user-select: none;
 }
 kbd {
-  background: #f2f3f5;
-  border: 1px solid #e5e6eb;
+  background: var(--bg-muted);
+  border: 1px solid var(--border-subtle);
   border-radius: 4px;
   padding: 1px 6px;
   font-size: 12px;

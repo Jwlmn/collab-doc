@@ -26,6 +26,7 @@ import { evaluateCellDisplay, isFormula } from '../io/formula'
 import CommentDrawer from '../components/CommentDrawer.vue'
 import SheetVersionDrawer from '../components/SheetVersionDrawer.vue'
 import ShareModal from '../components/ShareModal.vue'
+import ThemeToggle from '../components/ThemeToggle.vue'
 import type { DocumentMeta } from '../types'
 
 interface CollabTokenData {
@@ -537,6 +538,21 @@ function cfStyleAt(r: number, c: number): CellStyle | null {
   return hit
 }
 
+/**
+ * 给定背景色算一盏「墨水」：亮底配深字、暗底配亮字。
+ * 单元格底色是用户数据（浅色粉彩为主），深色主题下若任由文字继承页面浅色，
+ * 会糊在亮底上不可读；显式指定过文字色的仍以用户选择为准。
+ */
+function contrastInk(bg: string): string {
+  const m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(bg.trim())
+  if (!m) return ''
+  const hex = m[1].length === 3 ? m[1].replace(/./g, (ch) => ch + ch) : m[1]
+  const [r, g, b] = [0, 2, 4].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255)
+  const lin = (v: number) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4)
+  const luminance = 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b)
+  return luminance > 0.45 ? '#1f2329' : '#e5e6eb'
+}
+
 function cellCssStyle(r: number, c: number): Record<string, string> {
   const s = cellStyle(r, c)
   const base = {
@@ -548,14 +564,17 @@ function cellCssStyle(r: number, c: number): Record<string, string> {
 
   // 条件格式只覆盖它自己声明的字段，其余沿用手动样式
   const cf = cfStyleAt(r, c)
-  if (!cf) return base
+  const merged = cf
+    ? {
+        fontWeight: cf.b ? '700' : base.fontWeight,
+        color: cf.c ?? base.color,
+        background: cf.bg ?? base.background,
+        textAlign: cf.al ?? base.textAlign,
+      }
+    : base
 
-  return {
-    fontWeight: cf.b ? '700' : base.fontWeight,
-    color: cf.c ?? base.color,
-    background: cf.bg ?? base.background,
-    textAlign: cf.al ?? base.textAlign,
-  }
+  if (!merged.color && merged.background) merged.color = contrastInk(merged.background)
+  return merged
 }
 
 /* ---------------- 条件格式 UI ---------------- */
@@ -1459,6 +1478,7 @@ onBeforeUnmount(() => {
         <n-tag v-if="isReadonly" size="small" type="warning" round>🔒 只读</n-tag>
       </n-space>
       <n-space align="center" size="small" :wrap="true">
+        <ThemeToggle />
         <n-button quaternary size="small" aria-label="?（快捷键说明）" @click="helpVisible = true">?</n-button>
         <n-button v-if="canRename" quaternary size="small" @click="shareVisible = true">共享</n-button>
         <n-button
@@ -1999,14 +2019,14 @@ onBeforeUnmount(() => {
 }
 .cf-label {
   font-size: 12px;
-  color: #646a73;
+  color: var(--text-2);
   margin-right: 4px;
 }
 .cf-swatch {
   width: 18px;
   height: 18px;
   border-radius: 3px;
-  border: 1px solid rgba(0, 0, 0, 0.12);
+  border: 1px solid var(--border-strong);
   cursor: pointer;
   display: inline-block;
   flex: none;
@@ -2050,7 +2070,7 @@ onBeforeUnmount(() => {
   z-index: 2;
   background: var(--bg-muted);
   font-weight: 600;
-  color: #646a73;
+  color: var(--text-2);
   text-align: center;
 }
 .sheet-grid thead th.corner {
@@ -2064,7 +2084,7 @@ onBeforeUnmount(() => {
   z-index: 1;
   background: var(--bg-muted);
   font-weight: 500;
-  color: #646a73;
+  color: var(--text-2);
   text-align: center;
   width: 48px;
 }
@@ -2134,7 +2154,7 @@ onBeforeUnmount(() => {
 .sheet-grid th.col-active,
 .sheet-grid th.row-active {
   color: #2080f0;
-  background: #eaf3ff;
+  background: var(--col-active-bg);
 }
 .sheet-grid td {
   padding: 2px 6px;
@@ -2143,6 +2163,8 @@ onBeforeUnmount(() => {
   white-space: nowrap;
   text-overflow: ellipsis;
   position: relative;
+  /* 单元格默认文字色：深色主题下不继承（naive 主题不覆盖原生 table） */
+  color: var(--text-1);
 }
 /* 选区高亮：焦点格加重 */
 .sheet-grid td.selected {

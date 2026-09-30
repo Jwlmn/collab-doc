@@ -4,14 +4,16 @@
   box-sizing: border-box;
 }
 
-/* 配色变量定义在 index.html 的内联 <style>（防首帧闪黑），此处不重复 */
+/* 配色变量定义在 index.html 的内联 <style>（防首帧闪黑 + 深浅两套），此处不重复 */
 
 body {
   margin: 0;
   font-family:
     -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
-    'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+    'PingFang SC', 'Hiragin Sans GB', 'Microsoft YaHei', sans-serif;
   background: var(--bg-page);
+  /* naive 组件自带文字色；这行兜住组件外的裸文本（深色主题下不继承浏览器默认黑） */
+  color: var(--text-1);
 }
 
 /* 斜杠命令菜单（挂载于 body，需全局样式） */
@@ -80,4 +82,3 @@ body {
     scroll-behavior: auto !important;
   }
 }
-

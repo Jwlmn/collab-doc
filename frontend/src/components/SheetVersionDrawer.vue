@@ -359,17 +359,20 @@ async function handleDelete(version: DocumentVersion): Promise<void> {
 .preview-body :deep(table) {
   border-collapse: collapse;
 }
+.preview-body {
+  color: var(--text-1);
+}
 .preview-body :deep(th),
 .preview-body :deep(td) {
-  border: 1px solid #ccc;
+  border: 1px solid var(--border-strong);
   padding: 4px 8px;
   min-width: 64px;
 }
 .preview-body :deep(th) {
-  background: #f2f3f5;
+  background: var(--bg-muted);
 }
 .preview-empty {
-  color: #909399;
+  color: var(--text-3);
   text-align: center;
   padding: 32px 0;
 }
@@ -379,7 +382,7 @@ async function handleDelete(version: DocumentVersion): Promise<void> {
 }
 .diff-summary {
   font-size: 13px;
-  color: #4e5969;
+  color: var(--text-2);
   margin-bottom: 8px;
 }
 .diff-table-wrap {
@@ -390,13 +393,13 @@ async function handleDelete(version: DocumentVersion): Promise<void> {
   font-size: 13px;
 }
 .diff-table :deep(td) {
-  border: 1px solid #e5e6eb;
+  border: 1px solid var(--border-subtle);
   padding: 4px 8px;
   min-width: 64px;
 }
 .diff-cell-changed {
-  background: #fff7e6;
-  color: #ad6800;
+  background: var(--status-warn-bg);
+  color: var(--status-warn-fg);
 }
 .diff-before {
   text-decoration: line-through;
@@ -410,18 +413,18 @@ async function handleDelete(version: DocumentVersion): Promise<void> {
   font-weight: 600;
 }
 .diff-cell-added {
-  background: #e8f7ee;
-  color: #1a7f37;
+  background: var(--status-ok-bg);
+  color: var(--status-ok-fg);
 }
 .diff-cell-removed {
-  background: #fdeceb;
-  color: #b42318;
+  background: var(--status-err-bg);
+  color: var(--status-err-fg);
   text-decoration: line-through;
 }
 .diff-row-added > td:first-child {
-  box-shadow: inset 3px 0 0 #1a7f37;
+  box-shadow: inset 3px 0 0 var(--status-ok-fg);
 }
 .diff-row-removed > td:first-child {
-  box-shadow: inset 3px 0 0 #b42318;
+  box-shadow: inset 3px 0 0 var(--status-err-fg);
 }
 </style>

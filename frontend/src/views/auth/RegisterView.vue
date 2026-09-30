@@ -93,7 +93,7 @@ async function handleSubmit() {
 .auth-switch {
   margin-top: 16px;
   text-align: center;
-  color: #888;
+  color: var(--text-3);
   font-size: 14px;
 }
 </style>

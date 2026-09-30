@@ -360,7 +360,7 @@ async function handleDelete(comment: Comment): Promise<void> {
 .comment-time {
   flex: 1;
   font-size: 12px;
-  color: #999;
+  color: var(--text-3);
 }
 .comment-content {
   font-size: 14px;
@@ -411,6 +411,6 @@ async function handleDelete(comment: Comment): Promise<void> {
 .mention-empty {
   padding: 10px 12px;
   font-size: 13px;
-  color: #999;
+  color: var(--text-3);
 }
 </style>

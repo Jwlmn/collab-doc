@@ -95,9 +95,9 @@ onMounted(async () => {
   gap: 8px;
   padding: 6px 16px;
   font-size: 13px;
-  color: #8a6116;
-  background: #fff7e6;
-  border-bottom: 1px solid #ffe7ba;
+  color: var(--status-warn-fg);
+  background: var(--status-warn-bg);
+  border-bottom: 1px solid var(--status-warn-border);
 }
 
 .share-expiry {

@@ -344,24 +344,27 @@ async function handleDelete(version: DocumentVersion): Promise<void> {
 .preview-body :deep(ol) {
   padding-left: 1.5em;
 }
+.preview-body {
+  color: var(--text-1);
+}
 .preview-body :deep(blockquote) {
-  border-left: 3px solid #d0d3d9;
+  border-left: 3px solid var(--border-strong);
   padding-left: 1em;
-  color: #666;
+  color: var(--text-2);
 }
 .preview-body :deep(pre) {
-  background: #f4f5f7;
+  background: var(--bg-muted);
   border-radius: 6px;
   padding: 12px 16px;
   overflow-x: auto;
 }
 .preview-body :deep(code) {
-  background: #f4f5f7;
+  background: var(--bg-muted);
   border-radius: 3px;
   padding: 2px 5px;
 }
 .preview-empty {
-  color: #909399;
+  color: var(--text-3);
   text-align: center;
   padding: 32px 0;
 }
@@ -371,7 +374,7 @@ async function handleDelete(version: DocumentVersion): Promise<void> {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 13px;
   line-height: 1.7;
-  border: 1px solid #e5e6eb;
+  border: 1px solid var(--border-subtle);
   border-radius: 6px;
 }
 .diff-line {
@@ -388,14 +391,14 @@ async function handleDelete(version: DocumentVersion): Promise<void> {
   opacity: 0.75;
 }
 .diff-added {
-  background: #e8f7ee;
-  color: #1a7f37;
+  background: var(--status-ok-bg);
+  color: var(--status-ok-fg);
 }
 .diff-removed {
-  background: #fdeceb;
-  color: #b42318;
+  background: var(--status-err-bg);
+  color: var(--status-err-fg);
 }
 .diff-equal {
-  color: #4e5969;
+  color: var(--text-2);
 }
 </style>

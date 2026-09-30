@@ -4,14 +4,23 @@ import {
   NDialogProvider,
   NMessageProvider,
   NNotificationProvider,
+  darkTheme,
   zhCN,
   dateZhCN,
 } from 'naive-ui'
-import { themeOverrides } from './styles/theme'
+import { lightThemeOverrides, darkThemeOverrides } from './styles/theme'
+import { useTheme } from './composables/useTheme'
+
+const { isDark } = useTheme()
 </script>
 
 <template>
-  <n-config-provider :locale="zhCN" :date-locale="dateZhCN" :theme-overrides="themeOverrides">
+  <n-config-provider
+    :locale="zhCN"
+    :date-locale="dateZhCN"
+    :theme="isDark ? darkTheme : undefined"
+    :theme-overrides="isDark ? darkThemeOverrides : lightThemeOverrides"
+  >
     <n-notification-provider>
       <n-message-provider>
         <n-dialog-provider>

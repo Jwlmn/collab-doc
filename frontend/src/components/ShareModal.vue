@@ -482,7 +482,7 @@ async function copyInviteLink(): Promise<void> {
 }
 .suggest-email {
   font-size: 12px;
-  color: #999;
+  color: var(--text-3);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

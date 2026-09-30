@@ -54,6 +54,7 @@ declare module 'vue' {
     RouterView: typeof import('vue-router')['RouterView']
     ShareModal: typeof import('./src/components/ShareModal.vue')['default']
     SheetVersionDrawer: typeof import('./src/components/SheetVersionDrawer.vue')['default']
+    ThemeToggle: typeof import('./src/components/ThemeToggle.vue')['default']
     VersionDrawer: typeof import('./src/components/VersionDrawer.vue')['default']
   }
 }

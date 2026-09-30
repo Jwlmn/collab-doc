@@ -3,6 +3,7 @@ import { ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useMessage } from 'naive-ui'
 import { api, getApiErrorMessage } from '../utils/request'
+import ThemeToggle from '../components/ThemeToggle.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -32,6 +33,9 @@ async function handleAccept(): Promise<void> {
 
 <template>
   <div class="invite-page">
+    <div class="invite-theme-toggle">
+      <ThemeToggle />
+    </div>
     <n-card title="协作文档邀请" class="invite-card">
       <n-space vertical size="large" align="center" style="text-align: center">
         <n-text style="font-size: 14px">
@@ -51,9 +55,15 @@ async function handleAccept(): Promise<void> {
 
 <style scoped>
 .invite-page {
+  position: relative;
   display: flex;
   justify-content: center;
   padding-top: 96px;
+}
+.invite-theme-toggle {
+  position: absolute;
+  top: 16px;
+  right: 24px;
 }
 .invite-card {
   width: min(440px, 92vw);

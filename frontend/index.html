@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="zh-CN" style="background: #f7f8fa">
+<html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
@@ -7,9 +7,10 @@
     <title>多人实时协作文档</title>
     <!--
       配色变量内联在 head：Vite 的业务 CSS 由 JS 注入，加载前页面无底色，
-      透明画布会闪黑（冷缓存首刷最明显）。阻塞式样式 + html 内联背景
+      透明画布会闪黑（冷缓存首刷最明显）。阻塞式样式 + html 背景规则
       保证首帧即有正确底色；变量唯一来源也是这里（main.css 不再重复定义）。
-      暂不支持深色模式（浅色固定）。
+      深色模式：data-theme="dark" 由下方内联脚本在首帧前写入（localStorage
+      → 跟随系统），应用侧 useDark 使用同一 storageKey，两侧逻辑必须同步。
     -->
     <style>
       :root {
@@ -20,8 +21,74 @@
         --border-subtle: #e5e6eb;
         --border-faint: #eef0f3;
         --shadow-card: 0 1px 4px rgba(0, 0, 0, 0.06);
+        /* 语义变量（与 styles/theme.ts 的 Naive token 对齐） */
+        --text-1: #1f2329;
+        --text-2: #4e5969;
+        --text-3: #6a707a;
+        --bg-hover: #f2f3f5;
+        --bg-active: #e5e6eb;
+        --border-strong: #d0d3d9;
+        --bg-editor: #ffffff; /* 文档纸面/表格底色 */
+        /* 状态色对（徽标、diff、横幅：底 + 字成对换） */
+        --status-ok-bg: #e8f7ee;
+        --status-ok-fg: #1a7f37;
+        --status-err-bg: #fdeceb;
+        --status-err-fg: #b42318;
+        --status-warn-bg: #fff7e6;
+        --status-warn-fg: #ad6800;
+        --status-warn-border: #ffe7ba;
+        --status-info-bg: #e7f1ff;
+        --status-info-fg: #1d5fbf;
+        --search-hit-bg: rgba(255, 212, 0, 0.45);
+        --col-active-bg: #eaf3ff;
+      }
+      :root[data-theme='dark'] {
+        color-scheme: dark;
+        --bg-page: #17181c;
+        --bg-surface: #1e2025;
+        --bg-muted: #26282e;
+        --border-subtle: #2c2f36;
+        --border-faint: #24262b;
+        --shadow-card: 0 1px 4px rgba(0, 0, 0, 0.4);
+        --text-1: #e5e6eb;
+        --text-2: #a9aeb8;
+        --text-3: #86909c;
+        --bg-hover: #26282e;
+        --bg-active: #2f323a;
+        --border-strong: #3a3e46;
+        --bg-editor: #1e2025;
+        --status-ok-bg: #12301f;
+        --status-ok-fg: #57d38c;
+        --status-err-bg: #3a1518;
+        --status-err-fg: #f97066;
+        --status-warn-bg: #33240a;
+        --status-warn-fg: #f5c065;
+        --status-warn-border: #5a4218;
+        --status-info-bg: #12243f;
+        --status-info-fg: #7eb0ff;
+        /* 深色下降低不透明度，避免亮黄压过继承的浅色文字 */
+        --search-hit-bg: rgba(255, 212, 0, 0.28);
+        --col-active-bg: rgba(32, 128, 240, 0.25);
+      }
+      html,
+      body {
+        background: var(--bg-page);
       }
     </style>
+    <script>
+      /* 首帧前定主题：localStorage 优先（与 useTheme 的 storageKey 同步），否则跟随系统 */
+      (function () {
+        try {
+          var t = localStorage.getItem('collab-doc-theme')
+          if (t !== 'dark' && t !== 'light') {
+            t = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+          }
+          document.documentElement.setAttribute('data-theme', t)
+        } catch (e) {
+          /* 隐私模式等异常场景回退浅色 */
+        }
+      })()
+    </script>
   </head>
   <body>
     <div id="app"></div>
