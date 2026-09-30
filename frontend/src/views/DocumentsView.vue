@@ -3,6 +3,7 @@ import { computed, h, onBeforeUnmount, onMounted, reactive, ref, watch } from 'v
 import { useRouter } from 'vue-router'
 import { NButton, useDialog, useMessage, useNotification, type DropdownOption } from 'naive-ui'
 import { useDocumentsStore } from '../stores/documents'
+import { useFoldersStore } from '../stores/folders'
 import { api, getApiErrorMessage } from '../utils/request'
 import ShareModal from '../components/ShareModal.vue'
 import { highlight } from '../utils/highlight'
@@ -13,7 +14,7 @@ import { useImportFlowStore } from '../stores/importFlow'
 import { importFileToPayload, docTitleFromFilename } from '../io/importFile'
 import { useI18n } from 'vue-i18n'
 import { DOC_TEMPLATES, findTemplate, type DocTemplate } from '../io/templates'
-import type { DocumentMeta } from '../types'
+import type { DocumentMeta, Folder } from '../types'
 
 /** 按文档类型打开对应编辑器 */
 function openDoc(doc: Pick<DocumentMeta, 'id' | 'type'>) {
@@ -30,6 +31,7 @@ function openDoc(doc: Pick<DocumentMeta, 'id' | 'type'>) {
 const { t } = useI18n()
 
 const documents = useDocumentsStore()
+const folders = useFoldersStore()
 const importFlow = useImportFlowStore()
 const message = useMessage()
 const notification = useNotification()
@@ -136,12 +138,34 @@ const sortedList = computed(() => {
   return arr
 })
 
+/** 文件夹筛选：0 = 全部（naive-ui 的 option value 不用 null，0 哨兵 + 真值判断兼容 clearable 的 null） */
+const folderFilter = ref(0)
+
+const folderOptions = computed(() => [
+  { label: t('folders.filterAll'), value: 0 },
+  ...folders.list.map((folder) => ({ label: folder.name, value: folder.id })),
+])
+
+function folderName(id: number | null | undefined): string {
+  return id ? (folders.list.find((folder) => folder.id === id)?.name ?? '') : ''
+}
+
 /**
  * 列表分区渲染：置顶组在前（组内仍按当前排序），其余归「全部文档」。
  * 搜索态不分组（结果以命中为序），无置顶时保持原来的单列表。
  */
+/**
+ * 文件夹筛选：浏览态生效；搜索态忽略（筛选 select 同步 disabled）——
+ * 搜索是全局平铺态，评论命中不带 folder 信息，只筛正文命中的那半会显得自相矛盾。
+ */
+const filteredByFolder = computed(() => {
+  const arr = sortedList.value
+  if (documents.searching || !folderFilter.value) return arr
+  return arr.filter((doc) => doc.folder_id === folderFilter.value)
+})
+
 const displayGroups = computed(() => {
-  const all = sortedList.value
+  const all = filteredByFolder.value
   if (documents.searching) return [{ key: 'all', title: '', docs: all }]
   const pinned = all.filter((doc) => doc.pinned)
   if (pinned.length === 0) return [{ key: 'all', title: '', docs: all }]
@@ -165,6 +189,93 @@ async function togglePin(doc: DocumentMeta) {
   } finally {
     togglingPinId.value = null
   }
+}
+
+/** 移动文档的 in-flight 守卫（文档 id） */
+const movingFolderId = ref<number | null>(null)
+
+/** 把文档移入/移出文件夹（成功后刷新 folders 以更新 documents_count） */
+async function handleMove(doc: DocumentMeta, folderId: number | null) {
+  if (movingFolderId.value !== null) return
+  movingFolderId.value = doc.id
+  try {
+    const result = await documents.setFolder(doc, folderId)
+    await folders.fetch()
+    message.success(
+      result === null
+        ? t('folders.unfiledToast', { title: doc.title })
+        : t('folders.movedToast', { title: doc.title, folder: folderName(result) }),
+    )
+  } catch (error) {
+    message.error(getApiErrorMessage(error))
+  } finally {
+    movingFolderId.value = null
+  }
+}
+
+/** 文件夹管理弹窗状态 */
+const manageVisible = ref(false)
+const folderSaving = ref(false)
+const newFolderName = ref('')
+const editingFolderId = ref<number | null>(null)
+const editingFolderName = ref('')
+
+function openManage() {
+  newFolderName.value = ''
+  editingFolderId.value = null
+  manageVisible.value = true
+}
+
+async function handleCreateFolder() {
+  const name = newFolderName.value.trim()
+  if (!name || folderSaving.value) return
+  folderSaving.value = true
+  try {
+    const folder = await folders.create(name)
+    newFolderName.value = ''
+    message.success(t('folders.created', { name: folder.name }))
+  } catch (error) {
+    message.error(getApiErrorMessage(error))
+  } finally {
+    folderSaving.value = false
+  }
+}
+
+function startRenameFolder(id: number) {
+  editingFolderId.value = id
+  editingFolderName.value = folders.list.find((folder) => folder.id === id)?.name ?? ''
+}
+
+async function handleRenameFolder() {
+  const name = editingFolderName.value.trim()
+  if (!name || editingFolderId.value === null) return
+  try {
+    await folders.rename(editingFolderId.value, name)
+    editingFolderId.value = null
+    message.success(t('folders.renamed', { name }))
+  } catch (error) {
+    message.error(getApiErrorMessage(error))
+  }
+}
+
+function handleDeleteFolder(folder: Folder) {
+  dialog.warning({
+    title: t('folders.deleteTitle'),
+    content: t('folders.deleteContent', { name: folder.name }),
+    positiveText: t('common.delete'),
+    negativeText: t('common.cancel'),
+    positiveButtonProps: { type: 'error' },
+    onPositiveClick: async () => {
+      try {
+        await folders.remove(folder.id)
+        // 删除的是当前激活的筛选 → 重置为「全部」，否则列表会静默清空
+        if (folderFilter.value === folder.id) folderFilter.value = 0
+        message.success(t('folders.deleted', { name: folder.name }))
+      } catch (error) {
+        message.error(getApiErrorMessage(error))
+      }
+    },
+  })
 }
 
 watch(searchInput, (value) => {
@@ -195,6 +306,7 @@ function handleSearchShortcut(event: KeyboardEvent) {
 
 onMounted(() => {
   void documents.fetch().catch((error) => message.error(getApiErrorMessage(error)))
+  void folders.fetch().catch((error) => message.error(getApiErrorMessage(error)))
   window.addEventListener('keydown', handleSearchShortcut)
 })
 
@@ -219,14 +331,16 @@ const createMenuOptions = computed(() => [
   })),
 ])
 
-/** 移动端头部收纳的「⋯」菜单（导入/回收站） */
+/** 移动端头部收纳的「⋯」菜单（导入/回收站/管理文件夹） */
 const moreMenuOptions = computed(() => [
   { key: 'import', label: t('documents.importMenu') },
+  { key: 'folders', label: t('folders.manageMenu') },
   { key: 'trash', label: t('documents.trashMenu') },
 ])
 
 function handleMoreMenu(key: string) {
   if (key === 'import') openImportPicker()
+  else if (key === 'folders') openManage()
   else if (key === 'trash') void router.push('/trash')
 }
 
@@ -317,16 +431,34 @@ async function handleDelete(doc: DocumentMeta) {
   }
 }
 
-/** 移动端「⋯」菜单：删除用对话框确认（无 popconfirm 宿主） */
+/**
+ * owner 行操作菜单：共享/重命名 + 移动到文件夹 + 管理 + 删除。
+ * 桌面「移动」按钮与网格/移动端 ⋯ 共用同一份 options，只有一处构建逻辑。
+ */
 function ownerMenuOptions(_doc: DocumentMeta): DropdownOption[] {
   return [
     { key: 'share', label: t('documents.menuShare') },
     { key: 'rename', label: t('documents.menuRename') },
+    { type: 'divider', key: 'd-folder' },
+    { type: 'header', key: 'h-folder', label: t('folders.moveHeading') },
+    { key: 'folder:none', label: t('folders.unfiled') },
+    ...folders.list.map((folder) => ({ key: `folder:${folder.id}`, label: folder.name })),
+    { type: 'divider', key: 'd-manage' },
+    { key: 'folder:manage', label: t('folders.manageMenu') },
+    { type: 'divider', key: 'd2' },
     { key: 'delete', label: t('documents.menuDelete'), props: { style: 'color: #d03050' } },
   ]
 }
 
 function handleOwnerMenu(key: string, doc: DocumentMeta) {
+  if (key === 'folder:manage') {
+    openManage()
+    return
+  }
+  if (key.startsWith('folder:')) {
+    void handleMove(doc, key === 'folder:none' ? null : Number(key.slice(7)))
+    return
+  }
   if (key === 'share') openShare(doc)
   else if (key === 'rename') openRename(doc)
   else if (key === 'delete') {
@@ -374,6 +506,26 @@ const emptyStateDescription = computed(() => {
   <div>
     <div class="list-header">
       <h2>{{ documents.searching ? $t('documents.headingSearch') : $t('documents.headingDocs') }}</h2>
+      <!-- 文件夹筛选：搜索态 disabled（该态忽略筛选，见 filteredByFolder 注释） -->
+      <n-select
+        v-model:value="folderFilter"
+        :options="folderOptions"
+        size="small"
+        :disabled="documents.searching"
+        :aria-label="$t('folders.filterAria')"
+        name="folder-filter"
+        id="folder-filter"
+        class="ctl-folder"
+      />
+      <n-button
+        size="small"
+        quaternary
+        :aria-label="$t('folders.manageAria')"
+        class="ctl-folder-manage"
+        @click="openManage()"
+      >
+        {{ $t('folders.manageBtn') }}
+      </n-button>
       <n-select
         v-model:value="sortBy"
         :options="sortOptions"
@@ -431,8 +583,14 @@ const emptyStateDescription = computed(() => {
     </div>
 
     <template v-else>
+      <!-- 文件夹筛选优先：命中为空就报「此文件夹还没有文档」（哪怕一篇文档都还没有） -->
       <n-empty
-        v-if="documents.list.length === 0"
+        v-if="!documents.searching && folderFilter !== 0 && filteredByFolder.length === 0"
+        :description="$t('folders.filterEmpty')"
+        style="margin-top: 64px"
+      />
+      <n-empty
+        v-else-if="documents.list.length === 0"
         :description="emptyStateDescription"
         style="margin-top: 64px"
       >
@@ -471,6 +629,7 @@ const emptyStateDescription = computed(() => {
             <n-space size="small" align="center" style="margin-top: 8px">
               <n-tag v-if="doc.role === 'viewer'" size="tiny" type="warning" round>{{ $t('documents.viewerTag') }}</n-tag>
               <n-tag v-else-if="doc.role === 'editor'" size="tiny" type="info" round>{{ $t('documents.editorTag') }}</n-tag>
+              <n-tag v-if="folderName(doc.folder_id)" size="tiny" round>{{ folderName(doc.folder_id) }}</n-tag>
               <span
                 v-if="(doc.members?.length ?? 0) > 0"
                 class="member-stack"
@@ -607,6 +766,11 @@ const emptyStateDescription = computed(() => {
                   可编辑
                 </n-tag>
 
+                <!-- 文件夹徽标（folders 未加载完时名字为空，不渲染空标签） -->
+                <n-tag v-if="folderName(doc.folder_id)" size="tiny" round>
+                  {{ folderName(doc.folder_id) }}
+                </n-tag>
+
                 <!-- P1-8：成员头像叠堆（有共享成员时显示） -->
                 <span
                   v-if="(doc.members?.length ?? 0) > 0"
@@ -666,6 +830,12 @@ const emptyStateDescription = computed(() => {
               </n-button>
               <!-- 桌面：平铺操作；移动：收进「⋯」 -->
               <n-space v-if="doc.role === 'owner' && !isMobile" size="small">
+                <n-dropdown
+                  :options="ownerMenuOptions(doc)"
+                  @select="(key: string) => handleOwnerMenu(key, doc)"
+                >
+                  <n-button size="small" quaternary>{{ $t('folders.moveBtn') }}</n-button>
+                </n-dropdown>
                 <n-button size="small" quaternary @click="openShare(doc)">{{ $t('documents.shareBtn') }}</n-button>
                 <n-button size="small" @click="openRename(doc)">{{ $t('documents.renameBtn') }}</n-button>
                 <n-popconfirm @positive-click="handleDelete(doc)">
@@ -725,12 +895,79 @@ const emptyStateDescription = computed(() => {
       v-model:show="renameDialogVisible"
       preset="dialog"
       :title="$t('documents.renameDialogTitle')"
-      :positive-button-text="$t('common.save')"
-      :negative-button-text="$t('common.cancel')"
+      :positive-text="$t('common.save')"
+      :negative-text="$t('common.cancel')"
       :loading="renaming"
       @positive-click="handleRename"
     >
       <n-input v-model:value="renameTarget.title" :placeholder="$t('documents.docTitlePlaceholder')" :aria-label="$t('documents.docTitlePlaceholder')" @keyup.enter="handleRename"  name="document-title" id="document-title" />
+    </n-modal>
+
+    <!-- 文件夹管理：CRUD 全内联（重命名/删除不走 popconfirm——移动端 ⋯ 菜单无宿主，与文档删除同用 dialog） -->
+    <n-modal
+      v-model:show="manageVisible"
+      preset="dialog"
+      :title="$t('folders.manageTitle')"
+      :negative-text="$t('folders.closeBtn')"
+      class="folder-manage-modal"
+    >
+      <div class="folder-create-row">
+        <n-input
+          v-model:value="newFolderName"
+          size="small"
+          :placeholder="$t('folders.createPlaceholder')"
+          :aria-label="$t('folders.createPlaceholder')"
+          name="new-folder-name"
+          id="new-folder-name"
+          @keyup.enter="handleCreateFolder"
+        />
+        <n-button
+          size="small"
+          type="primary"
+          :loading="folderSaving"
+          :disabled="!newFolderName.trim()"
+          @click="handleCreateFolder"
+        >
+          {{ $t('folders.createBtn') }}
+        </n-button>
+      </div>
+
+      <n-empty
+        v-if="folders.list.length === 0"
+        size="small"
+        :description="$t('folders.empty')"
+        style="margin-top: 16px"
+      />
+      <div v-else class="folder-manage-list">
+        <div v-for="folder in folders.list" :key="folder.id" class="folder-manage-row">
+          <template v-if="editingFolderId === folder.id">
+            <n-input
+              v-model:value="editingFolderName"
+              size="small"
+              :aria-label="$t('folders.renameBtn')"
+              @keyup.enter="handleRenameFolder"
+            />
+            <n-button size="small" type="primary" @click="handleRenameFolder">
+              {{ $t('common.save') }}
+            </n-button>
+            <n-button size="small" quaternary @click="editingFolderId = null">
+              {{ $t('common.cancel') }}
+            </n-button>
+          </template>
+          <template v-else>
+            <span class="folder-manage-name">{{ folder.name }}</span>
+            <n-tag size="tiny" round :bordered="false">
+              {{ $t('folders.docCount', { count: folder.documents_count ?? 0 }) }}
+            </n-tag>
+            <n-button size="tiny" quaternary @click="startRenameFolder(folder.id)">
+              {{ $t('folders.renameBtn') }}
+            </n-button>
+            <n-button size="tiny" quaternary type="error" @click="handleDeleteFolder(folder)">
+              {{ $t('common.delete') }}
+            </n-button>
+          </template>
+        </div>
+      </div>
     </n-modal>
 
     <ShareModal v-model:show="shareVisible" :document-id="shareDocumentId" />
@@ -752,6 +989,31 @@ const emptyStateDescription = computed(() => {
 }
 .ctl-sort {
   width: 110px;
+}
+.ctl-folder {
+  width: 130px;
+}
+/* 管理弹窗：新建行与列表行 */
+.folder-create-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.folder-manage-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.folder-manage-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.folder-manage-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .search-box {
   width: min(260px, 100%);
@@ -847,14 +1109,21 @@ const emptyStateDescription = computed(() => {
     flex: 1 0 100%;
     width: 100%;
   }
-  .ctl-sort {
+  .ctl-folder {
     order: 3;
+    width: 120px;
   }
-  .ctl-view {
+  .ctl-folder-manage {
     order: 4;
   }
-  .ctl-more {
+  .ctl-sort {
     order: 5;
+  }
+  .ctl-view {
+    order: 6;
+  }
+  .ctl-more {
+    order: 7;
   }
   .list-header h2 {
     font-size: 16px;

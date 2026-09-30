@@ -1,7 +1,7 @@
 # v4 开发计划 ——「让文档好管理，让界面有夜间模式」
 
-> 状态：**第一、二梯队全部完成**（2026-09-30，第 1–8 项）；第三梯队已点单：✅ i18n（三梯队 #1）、🚧 文件夹（#3），其余按需
-> ✅ 1 深色模式 · 2 文档置顶 · 3 富文本增强 · 4 PDF 打印导出 · 5 设置页 · 6 评论进阶 · 7 文档模板 · 8 PWA 离线壳 · 9 i18n
+> 状态：**第一、二梯队全部完成**（2026-09-30，第 1–8 项）；第三梯队已点单：✅ i18n（三梯队 #1）、✅ 文件夹（#3），其余按需
+> ✅ 1 深色模式 · 2 文档置顶 · 3 富文本增强 · 4 PDF 打印导出 · 5 设置页 · 6 评论进阶 · 7 文档模板 · 8 PWA 离线壳 · 9 i18n · 10 文件夹
 > 前情：v3（B1–B3 + 主线四）已基本收尾，仅剩 i18n 点单项；本计划聚焦「日常用得舒服」
 > 质量基线：沿用现状（126 PHPUnit / 157 Vitest / Playwright E2E 8 组 / pint / vue-tsc 严格），测试按需本地手跑，**无 CI**
 
@@ -103,8 +103,23 @@
   - 三处踩坑记录：① 消息语法 `@` 是链接——邮件地址必须写 `{"@"}`（编译期炸，非运行期）
     ② 批量脚本误吞 common 命名空间导致字面键名渲染 ③ 菜单/选项数组要 `computed` 否则切语言不刷新
   - 验证：E2E 新增 language.spec（切换/持久化/标题与 lang 联动），**16 组全绿**；zh 默认值逐字保留，既有选择器零改动
+- [x] **文件夹（per-user 文档整理）** ✅（2026-09-30，三梯队 #3）
+  - 后端：`folders`（unique `[user_id,name]`）/ `folder_documents`（unique `[folder_id,document_id]`，双外键级联）迁移 +
+    `FolderController`（CRUD + `POST /documents/{id}/folder`，`folder_id=null` 即移出）；无 policy——他人文件夹一律 404 不暴露存在性；
+    per-user 语义全靠 `folderAssignments` **按调用者 `with`**，他人视角 `folder_id` 恒 null；共享文档可各自归入自己的文件夹
+  - 前端：全部收在 `DocumentsView`（工具栏筛选 select + owner 行「移动到文件夹」菜单 + 管理弹窗 CRUD + 行内文件夹徽标 + 筛选空态），
+    无侧栏改动；搜索态忽略并禁用筛选（搜索 = 全局平铺态，评论命中不带 folder 信息）；筛选会话内有效不持久化
+  - 踩坑：① `DocumentResource` 的 `folder_id`/`pinned` 依赖 `relationLoaded`——凡会回写前端列表行的端点
+    （search/pin/update/restore）必须走统一的 `withViewerRelations`，否则徽标/置顶被响应冲成 null/false
+    （`update` 此前连 pins 都不带，改名一篇置顶文档会视觉上取消置顶——顺手修掉的既有隐性 bug）；
+    ② attach 响应只有 `{folder_id}` 而非完整 DocumentResource，前端只能 spread 合并不能整行替换（rename/pin 同理，为保搜索 snippet）；
+    ③ 筛选哨兵用 `0` 不用 `null`（naive-ui select 的 null 显示 placeholder 而非「全部」选项）
+  - 意外收获：管理弹窗实测发现底部按钮没渲染——全站 6 处 `positive-button-text`/`negative-button-text`
+    均非 naive-ui 2.45 有效 prop（声明的是 `positiveText`/`negativeText`），改名/共享/链接弹窗底部按钮一直缺失
+    （改名靠回车在用，共享靠 X 关，无人察觉）——一并修为 `positive-text`/`negative-text`，E2E 实测按钮出现
+  - 验证：`FolderTest` 12 组全绿（含 3 个响应视角回归）/ 全量 164 PHPUnit / vue-tsc / 161 Vitest / build / **E2E 18 组全绿**（新增 folders.spec 2 组）
 - **Sentry / 错误上报**——上公网部署后再接
-- **文件夹/标签**——进行中（见下方「文档文件夹」条目）
+- **标签**——按需（文件夹已覆盖主要整理需求）
 - **Octane/Swoole、真机回归**——按部署节奏走
 
 ## 不建议做

@@ -24,6 +24,14 @@ export type DocumentRole = 'owner' | 'editor' | 'viewer'
 
 export type DocumentType = 'md' | 'excel'
 
+/** 当前用户的文件夹（文档整理空间，per-user 独立） */
+export interface Folder {
+  id: number
+  name: string
+  /** 归档文档数（列表接口带出） */
+  documents_count?: number
+}
+
 export interface DocumentMeta {
   id: number
   user_id: number
@@ -38,6 +46,8 @@ export interface DocumentMeta {
   updated_at?: string
   /** 当前用户是否置顶（按用户独立） */
   pinned?: boolean
+  /** 当前用户把该文档归入的文件夹（null/缺省 = 未分类） */
+  folder_id?: number | null
   /** 搜索结果时返回的上下文片段 */
   snippet?: string | null
 }

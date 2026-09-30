@@ -6,6 +6,7 @@ use Database\Factories\DocumentFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
@@ -83,6 +84,16 @@ class Document extends Model
     public function lastReads(): HasMany
     {
         return $this->hasMany(DocumentLastRead::class);
+    }
+
+    /**
+     * 各用户文件夹对该文档的归属（per-user 语义由 folder.user_id 承载）。
+     *
+     * @return BelongsToMany<Folder, $this>
+     */
+    public function folderAssignments(): BelongsToMany
+    {
+        return $this->belongsToMany(Folder::class, 'folder_documents')->withTimestamps();
     }
 
     /**

@@ -40,6 +40,10 @@ class DocumentResource extends JsonResource
                     'role' => $member->role,
                 ])
                 ->values(),
+            // 当前用户把该文档归入的文件夹（仅在加载了本人归属关联时有值）
+            'folder_id' => $this->relationLoaded('folderAssignments')
+                ? $this->folderAssignments->first()?->id
+                : null,
             // 当前用户是否置顶（仅在加载了本人 pins 关联时为 true，否则 false）
             'pinned' => $this->relationLoaded('pins')
                 && $this->pins->contains('user_id', $viewerId),

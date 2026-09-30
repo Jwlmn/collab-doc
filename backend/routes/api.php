@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\DocumentController;
 use App\Http\Controllers\Api\DocumentMemberController;
 use App\Http\Controllers\Api\DocumentMentionController;
 use App\Http\Controllers\Api\DocumentVersionController;
+use App\Http\Controllers\Api\FolderController;
 use App\Http\Controllers\Api\ImageController;
 use App\Http\Controllers\Api\InviteController;
 use App\Http\Controllers\Api\NotificationController;
@@ -52,6 +53,8 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::apiResource('documents', DocumentController::class);
     Route::post('/documents/{document}/pin', [DocumentController::class, 'pin']);
+    Route::post('/documents/{document}/folder', [FolderController::class, 'attach']);
+    Route::apiResource('folders', FolderController::class)->only(['index', 'store', 'update', 'destroy']);
     Route::post('/documents/{document}/collab-token', CollabTokenController::class);
     Route::post('/documents/{document}/invite-link', [InviteController::class, 'link']);
     // 公开只读分享链接（创建 / 撤销），仅所有者

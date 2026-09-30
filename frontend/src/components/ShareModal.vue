@@ -422,7 +422,7 @@ async function copyInviteLink(): Promise<void> {
     v-model:show="linkFallbackVisible"
     preset="dialog"
     :title="$t('share.manualCopyTitle')"
-    :negative-button-text="$t('share.closeBtn')"
+    :negative-text="$t('share.closeBtn')"
   >
     <n-input
       :value="linkFallback"

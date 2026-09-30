@@ -30,6 +30,16 @@ class User extends Authenticatable
     }
 
     /**
+     * 该用户的文件夹（文档整理空间，per-user 独立）。
+     *
+     * @return HasMany<Folder, $this>
+     */
+    public function folders(): HasMany
+    {
+        return $this->hasMany(Folder::class);
+    }
+
+    /**
      * 该用户发起的文档置顶（按用户独立，互不影响）。
      *
      * @return HasMany<DocumentPin, $this>

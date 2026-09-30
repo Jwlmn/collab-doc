@@ -23,7 +23,7 @@ class DocumentController extends Controller
         $user = $request->user();
 
         $documents = Document::query()
-            ->with(['user:id,name', 'members.user:id,name', 'pins' => fn ($pins) => $pins->where('user_id', $user->id)])
+            ->with($this->withViewerRelations($request))
             ->where(function ($query) use ($user) {
                 $query
                     ->where('user_id', $user->id)
@@ -33,6 +33,28 @@ class DocumentController extends Controller
             ->get();
 
         return DocumentResource::collection($documents);
+    }
+
+    /**
+     * 返回 DocumentResource 端点统一加载的「当前用户视角」关系。
+     *
+     * pins / folderAssignments 必须按调用者过滤——否则会串出他人的置顶与文件夹；
+     * 凡响应会回写前端列表行的端点（search/pin/update/restore）都必须带上，
+     * 否则 DocumentResource 因 relationLoaded 为假把 folder_id / pinned 报成
+     * null / false，冲掉列表行里的既有状态。
+     *
+     * @return array<int, string|array<string, mixed>>
+     */
+    private function withViewerRelations(Request $request): array
+    {
+        $userId = $request->user()?->id;
+
+        return [
+            'user:id,name',
+            'members.user:id,name',
+            'pins' => fn ($pins) => $pins->where('user_id', $userId),
+            'folderAssignments' => fn ($folders) => $folders->where('folders.user_id', $userId),
+        ];
     }
 
     /**
@@ -56,7 +78,7 @@ class DocumentController extends Controller
         $pattern = '%'.$escaped.'%';
 
         $documents = Document::query()
-            ->with(['user:id,name', 'members.user:id,name'])
+            ->with($this->withViewerRelations($request))
             ->where(function ($accessible) use ($user) {
                 $accessible
                     ->where('user_id', $user->id)
@@ -178,6 +200,7 @@ class DocumentController extends Controller
             'type' => $validated['type'] ?? Document::TYPE_MD,
         ]);
 
+        // 新文档：folder_id 必为 null、pinned 必为 false，无需加载视角关系
         return new DocumentResource(
             $document->load(['user:id,name'])
         );
@@ -190,11 +213,7 @@ class DocumentController extends Controller
     {
         $this->authorize('view', $document);
 
-        $document->load([
-            'user:id,name',
-            'members.user:id,name',
-            'pins' => fn ($pins) => $pins->where('user_id', $request->user()->id),
-        ]);
+        $document->load($this->withViewerRelations($request));
 
         return new DocumentResource($document);
     }
@@ -218,11 +237,7 @@ class DocumentController extends Controller
             $user->pins()->where('document_id', $document->id)->delete();
         }
 
-        return new DocumentResource($document->load([
-            'user:id,name',
-            'members.user:id,name',
-            'pins' => fn ($pins) => $pins->where('user_id', $user->id),
-        ]));
+        return new DocumentResource($document->load($this->withViewerRelations($request)));
     }
 
     /**
@@ -238,7 +253,7 @@ class DocumentController extends Controller
 
         $document->update($validated);
 
-        return new DocumentResource($document->load(['user:id,name']));
+        return new DocumentResource($document->load($this->withViewerRelations($request)));
     }
 
     /**
@@ -282,7 +297,7 @@ class DocumentController extends Controller
 
         $doc->restore();
 
-        return new DocumentResource($doc->load(['user:id,name']));
+        return new DocumentResource($doc->load($this->withViewerRelations($request)));
     }
 
     /**

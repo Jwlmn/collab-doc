@@ -888,8 +888,8 @@ async function handleRename() {
       v-model:show="linkVisible"
       preset="dialog"
       :title="$t('editor.linkDialogTitle')"
-      :positive-button-text="$t('editor.linkDialogOk')"
-      :negative-button-text="$t('common.cancel')"
+      :positive-text="$t('editor.linkDialogOk')"
+      :negative-text="$t('common.cancel')"
       @positive-click="confirmLink"
     >
       <n-input

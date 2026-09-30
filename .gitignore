@@ -22,6 +22,7 @@ backend.bootstrap/cache/*.php
 npm-debug.log*
 
 # Playwright 运行产物
+test-results/
 frontend/test-results/
 frontend/playwright-report/
 

@@ -58,7 +58,8 @@ export const useDocumentsStore = defineStore('documents', () => {
     const { data } = await api.put(`/documents/${id}`, { title })
     const index = list.value.findIndex((doc) => doc.id === id)
     if (index !== -1) {
-      list.value[index] = data.data
+      // 合并而非整行替换：搜索态的 snippet 不在响应里，替换会丢高亮片段
+      list.value[index] = { ...list.value[index], ...data.data }
     }
   }
 
@@ -73,9 +74,21 @@ export const useDocumentsStore = defineStore('documents', () => {
     const { data } = await api.post(`/documents/${doc.id}/pin`, { pinned })
     const index = list.value.findIndex((item) => item.id === doc.id)
     if (index !== -1) {
-      list.value[index] = data.data
+      // 合并而非整行替换：搜索态的 snippet 不在响应里，替换会丢高亮片段
+      list.value[index] = { ...list.value[index], ...data.data }
     }
     return pinned
+  }
+
+  /** 把文档移入/移出当前用户的文件夹（folderId=null → 未分类），返回生效的 folder_id */
+  async function setFolder(doc: DocumentMeta, folderId: number | null): Promise<number | null> {
+    const { data } = await api.post(`/documents/${doc.id}/folder`, { folder_id: folderId })
+    const index = list.value.findIndex((item) => item.id === doc.id)
+    if (index !== -1) {
+      // attach 响应只有 { folder_id }（非完整 DocumentResource）→ 只能合并，绝不整行替换
+      list.value[index] = { ...list.value[index], folder_id: data.data.folder_id }
+    }
+    return data.data.folder_id
   }
 
   return {
@@ -90,5 +103,6 @@ export const useDocumentsStore = defineStore('documents', () => {
     rename,
     remove,
     togglePin,
+    setFolder,
   }
 })
