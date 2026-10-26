@@ -17,12 +17,19 @@
     <style>
       :root {
         color-scheme: light;
-        --bg-page: #f7f8fa;
+        --bg-page: #f6f7f9;
         --bg-surface: #ffffff;
         --bg-muted: #f2f3f5;
         --border-subtle: #e5e6eb;
         --border-faint: #eef0f3;
-        --shadow-card: 0 1px 4px rgba(0, 0, 0, 0.06);
+        /* 分层阴影：贴近纸面的接触阴影 + 稍远的悬浮阴影，避免一刀切的灰蒙 */
+        --shadow-card: 0 1px 2px rgba(16, 24, 40, 0.04), 0 1px 3px rgba(16, 24, 40, 0.06);
+        --shadow-float: 0 8px 24px rgba(16, 24, 40, 0.12), 0 2px 6px rgba(16, 24, 40, 0.08);
+        --shadow-lift: 0 12px 28px rgba(16, 24, 40, 0.14), 0 3px 8px rgba(16, 24, 40, 0.08);
+        /* 圆角尺度：小控件 / 常规卡片 / 大面板 */
+        --radius-sm: 6px;
+        --radius-md: 10px;
+        --radius-lg: 14px;
         /* 语义变量（与 styles/theme.ts 的 Naive token 对齐） */
         --text-1: #1f2329;
         --text-2: #4e5969;
@@ -31,6 +38,11 @@
         --bg-active: #e5e6eb;
         --border-strong: #d0d3d9;
         --bg-editor: #ffffff; /* 文档纸面/表格底色 */
+        /* 文档类型识别色：MD=蓝 / Excel=绿，图标底、徽标、类型标记共用 */
+        --type-md: #2080f0;
+        --type-md-bg: #e8f1fe;
+        --type-excel: #18a058;
+        --type-excel-bg: #e6f6ec;
         /* 状态色对（徽标、diff、横幅：底 + 字成对换） */
         --status-ok-bg: #e8f7ee;
         --status-ok-fg: #1a7f37;
@@ -46,19 +58,28 @@
       }
       :root[data-theme='dark'] {
         color-scheme: dark;
-        --bg-page: #17181c;
-        --bg-surface: #1e2025;
-        --bg-muted: #26282e;
-        --border-subtle: #2c2f36;
-        --border-faint: #24262b;
-        --shadow-card: 0 1px 4px rgba(0, 0, 0, 0.4);
-        --text-1: #e5e6eb;
+        --bg-page: #141519;
+        --bg-surface: #1c1e23;
+        --bg-muted: #25272d;
+        --border-subtle: #2b2e35;
+        --border-faint: #23252b;
+        --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4), 0 1px 3px rgba(0, 0, 0, 0.3);
+        --shadow-float: 0 8px 24px rgba(0, 0, 0, 0.55), 0 2px 6px rgba(0, 0, 0, 0.4);
+        --shadow-lift: 0 12px 28px rgba(0, 0, 0, 0.6), 0 3px 8px rgba(0, 0, 0, 0.45);
+        --radius-sm: 6px;
+        --radius-md: 10px;
+        --radius-lg: 14px;
+        --text-1: #e9eaee;
         --text-2: #a9aeb8;
         --text-3: #86909c;
-        --bg-hover: #26282e;
-        --bg-active: #2f323a;
+        --bg-hover: #25272d;
+        --bg-active: #2e3138;
         --border-strong: #3a3e46;
-        --bg-editor: #1e2025;
+        --bg-editor: #1c1e23;
+        --type-md: #4098fc;
+        --type-md-bg: rgba(32, 128, 240, 0.16);
+        --type-excel: #36ad6a;
+        --type-excel-bg: rgba(24, 160, 88, 0.16);
         --status-ok-bg: #12301f;
         --status-ok-fg: #57d38c;
         --status-err-bg: #3a1518;

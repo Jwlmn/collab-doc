@@ -82,6 +82,23 @@ export default {
     haveAccount: '已有账号？',
     toRegister: '立即注册',
     toLogin: '去登录',
+    lead: '和团队一起，把想法写成同一份文档',
+    subtitleLogin: '登录后继续你的协作空间',
+    subtitleRegister: '几秒钟创建账号，立即开始协作',
+    features: {
+      collab: {
+        title: '实时协同编辑',
+        desc: '多人同时编辑，光标与选区实时可见，改动即刻同步到每一位成员。',
+      },
+      crdt: {
+        title: '离线也不丢内容',
+        desc: '基于 CRDT 冲突自动合并，断网重连后内容依旧一致，无需手动对齐。',
+      },
+      sheets: {
+        title: '文档与表格一体',
+        desc: '富文本文档与电子表格同处一个空间，导入导出主流格式开箱即用。',
+      },
+    },
   },
   documents: {
     sortByUpdated: '最近更新',
@@ -136,6 +153,7 @@ export default {
     renameDialogTitle: '重命名文档',
     docTitlePlaceholder: '文档标题',
     imported: '已导入「{title}」（{kind}）',
+    totalDocs: '共 {count} 篇文档',
   },
   folders: {
     filterAll: '全部文件夹',

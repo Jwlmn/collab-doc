@@ -942,11 +942,17 @@ async function handleRename() {
   padding: 8px 16px;
   padding-left: calc(16px + env(safe-area-inset-left));
   padding-right: calc(16px + env(safe-area-inset-right));
-  background: var(--bg-surface);
+  background: color-mix(in srgb, var(--bg-surface) 82%, transparent);
+  backdrop-filter: saturate(180%) blur(12px);
+  -webkit-backdrop-filter: saturate(180%) blur(12px);
   border-bottom: 1px solid var(--border-subtle);
+  position: sticky;
+  top: 0;
+  z-index: 90;
 }
 .title-input {
   width: min(320px, 42vw);
+  font-weight: 600;
 }
 .title-input :deep(.n-input__state-border) {
   transition: border-color 0.2s;
@@ -983,17 +989,19 @@ async function handleRename() {
   flex: 1;
   max-width: 900px;
   width: 100%;
-  margin: 24px auto;
-  padding: 0 56px 48px;
+  margin: 28px auto;
+  padding: 0 56px 56px;
   background: var(--bg-surface);
-  border-radius: 8px;
+  border: 1px solid var(--border-faint);
+  border-radius: var(--radius-lg, 14px);
+  /* 纸面浮在页面上：两层阴影拉开与页面底色的距离 */
   box-shadow: var(--shadow-card);
-  min-height: calc(100vh - 128px);
-  min-height: calc(100dvh - 128px);
+  min-height: calc(100vh - 132px);
+  min-height: calc(100dvh - 132px);
 }
 .editor-surface :deep(.fmt-toolbar) {
   margin: 0 -56px;
-  border-radius: 8px 8px 0 0;
+  border-radius: var(--radius-lg, 14px) var(--radius-lg, 14px) 0 0;
 }
 /* 打印标题头：屏上隐藏，@media print 显示（纸面配色统一由 main.css 变量接管） */
 .print-header {

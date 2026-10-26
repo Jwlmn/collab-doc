@@ -82,6 +82,23 @@ const en: typeof zhCN = {
     haveAccount: 'Already have an account?',
     toRegister: 'Sign up',
     toLogin: 'Sign in',
+    lead: 'Write the same document together, in real time',
+    subtitleLogin: 'Sign in to pick up your workspace',
+    subtitleRegister: 'Create an account and start collaborating in seconds',
+    features: {
+      collab: {
+        title: 'Real-time co-editing',
+        desc: 'Everyone edits at once. Cursors and selections show up live, and changes sync instantly.',
+      },
+      crdt: {
+        title: 'Nothing lost offline',
+        desc: 'CRDT merges conflicts for you, so disconnecting and reconnecting never breaks consistency.',
+      },
+      sheets: {
+        title: 'Docs and sheets together',
+        desc: 'Rich documents and spreadsheets live side by side, with import and export built in.',
+      },
+    },
   },
   documents: {
     sortByUpdated: 'Recently updated',
@@ -136,6 +153,7 @@ const en: typeof zhCN = {
     renameDialogTitle: 'Rename document',
     docTitlePlaceholder: 'Document title',
     imported: 'Imported “{title}” ({kind})',
+    totalDocs: '{count} documents',
   },
   folders: {
     filterAll: 'All folders',

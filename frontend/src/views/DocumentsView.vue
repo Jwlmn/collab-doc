@@ -504,69 +504,86 @@ const emptyStateDescription = computed(() => {
 
 <template>
   <div>
+    <!-- 标题行：页面身份 + 主行动（新建），与下方筛选工具栏分层 -->
     <div class="list-header">
-      <h2>{{ documents.searching ? $t('documents.headingSearch') : $t('documents.headingDocs') }}</h2>
-      <!-- 文件夹筛选：搜索态 disabled（该态忽略筛选，见 filteredByFolder 注释） -->
-      <n-select
-        v-model:value="folderFilter"
-        :options="folderOptions"
-        size="small"
-        :disabled="documents.searching"
-        :aria-label="$t('folders.filterAria')"
-        name="folder-filter"
-        id="folder-filter"
-        class="ctl-folder"
-      />
-      <n-button
-        size="small"
-        quaternary
-        :aria-label="$t('folders.manageAria')"
-        class="ctl-folder-manage"
-        @click="openManage()"
-      >
-        {{ $t('folders.manageBtn') }}
-      </n-button>
-      <n-select
-        v-model:value="sortBy"
-        :options="sortOptions"
-        size="small"
-        :aria-label="$t('documents.sortAria')"
-        class="ctl-sort"
-       name="sort-by" id="sort-by" />
-      <n-button-group size="small" :aria-label="$t('documents.viewAria')" class="ctl-view">
+      <div class="list-heading">
+        <h2>{{ documents.searching ? $t('documents.headingSearch') : $t('documents.headingDocs') }}</h2>
+        <p v-if="!documents.searching && documents.list.length > 0" class="list-count">
+          {{ $t('documents.totalDocs', { count: documents.list.length }) }}
+        </p>
+      </div>
+      <div class="list-actions">
+        <n-input
+          ref="searchBoxRef"
+          v-model:value="searchInput"
+          name="document-search"
+          clearable
+          size="medium"
+          :placeholder="$t('documents.searchPlaceholder')"
+          :aria-label="$t('documents.searchAria')"
+          class="search-box"
+        />
+        <n-dropdown :options="createMenuOptions" @select="handleCreateMenu">
+          <n-button type="primary" size="medium" :loading="creating" class="ctl-create">{{ $t('documents.createBtn') }}</n-button>
+        </n-dropdown>
+        <!-- 桌面平铺；移动端收进「⋯」（与列表行操作的收纳策略一致） -->
+        <template v-if="!isMobile">
+          <n-button size="medium" :loading="importing" class="ctl-import" @click="openImportPicker">{{ $t('documents.importBtn') }}</n-button>
+          <n-button size="medium" quaternary class="ctl-trash" @click="router.push('/trash')">{{ $t('documents.trashBtn') }}</n-button>
+        </template>
+        <n-dropdown v-else :options="moreMenuOptions" @select="handleMoreMenu">
+          <n-button quaternary :aria-label="$t('documents.moreAria')" class="ctl-more">⋯</n-button>
+        </n-dropdown>
+      </div>
+    </div>
+
+    <!-- 筛选工具栏：文件夹 / 排序 / 视图，与主行动分离，减少一行内的视觉噪音 -->
+    <div class="filter-bar">
+      <div class="filter-group">
+        <!-- 文件夹筛选：搜索态 disabled（该态忽略筛选，见 filteredByFolder 注释） -->
+        <n-select
+          v-model:value="folderFilter"
+          :options="folderOptions"
+          size="small"
+          :disabled="documents.searching"
+          :aria-label="$t('folders.filterAria')"
+          name="folder-filter"
+          id="folder-filter"
+          class="ctl-folder"
+        />
         <n-button
-          :type="viewMode === 'list' ? 'primary' : 'default'"
-          @click="viewMode = 'list'"
+          size="small"
+          quaternary
+          :aria-label="$t('folders.manageAria')"
+          class="ctl-folder-manage"
+          @click="openManage()"
         >
-          列表
+          {{ $t('folders.manageBtn') }}
         </n-button>
-        <n-button
-          :type="viewMode === 'grid' ? 'primary' : 'default'"
-          @click="viewMode = 'grid'"
-        >
-          网格
-        </n-button>
-      </n-button-group>
-      <n-input
-        ref="searchBoxRef"
-        v-model:value="searchInput"
-        name="document-search"
-        clearable
-        :placeholder="$t('documents.searchPlaceholder')"
-        :aria-label="$t('documents.searchAria')"
-        class="search-box"
-      />
-      <n-dropdown :options="createMenuOptions" @select="handleCreateMenu">
-        <n-button type="primary" :loading="creating" class="ctl-create">{{ $t('documents.createBtn') }}</n-button>
-      </n-dropdown>
-      <!-- 桌面平铺；移动端收进「⋯」（与列表行操作的收纳策略一致） -->
-      <template v-if="!isMobile">
-        <n-button :loading="importing" class="ctl-import" @click="openImportPicker">{{ $t('documents.importBtn') }}</n-button>
-        <n-button quaternary class="ctl-trash" @click="router.push('/trash')">{{ $t('documents.trashBtn') }}</n-button>
-      </template>
-      <n-dropdown v-else :options="moreMenuOptions" @select="handleMoreMenu">
-        <n-button quaternary :aria-label="$t('documents.moreAria')" class="ctl-more">⋯</n-button>
-      </n-dropdown>
+      </div>
+      <div class="filter-group filter-group-end">
+        <n-select
+          v-model:value="sortBy"
+          :options="sortOptions"
+          size="small"
+          :aria-label="$t('documents.sortAria')"
+          class="ctl-sort"
+          name="sort-by" id="sort-by" />
+        <n-button-group size="small" :aria-label="$t('documents.viewAria')" class="ctl-view">
+          <n-button
+            :type="viewMode === 'list' ? 'primary' : 'default'"
+            @click="viewMode = 'list'"
+          >
+            列表
+          </n-button>
+          <n-button
+            :type="viewMode === 'grid' ? 'primary' : 'default'"
+            @click="viewMode = 'grid'"
+          >
+            网格
+          </n-button>
+        </n-button-group>
+      </div>
       <input
         ref="fileInputRef"
         type="file"
@@ -587,12 +604,12 @@ const emptyStateDescription = computed(() => {
       <n-empty
         v-if="!documents.searching && folderFilter !== 0 && filteredByFolder.length === 0"
         :description="$t('folders.filterEmpty')"
-        style="margin-top: 64px"
+        class="doc-empty"
       />
       <n-empty
         v-else-if="documents.list.length === 0"
         :description="emptyStateDescription"
-        style="margin-top: 64px"
+        class="doc-empty"
       >
         <n-space v-if="!documents.searching">
           <n-button type="primary" :loading="creating" @click="handleCreate('md')">
@@ -616,20 +633,28 @@ const emptyStateDescription = computed(() => {
             @click="openDoc(doc)"
             @keydown.enter="openDoc(doc)"
           >
-            <div class="grid-card-title">
-              <n-tag
-                size="tiny"
-                round
-                :type="doc.type === 'excel' ? 'success' : 'default'"
-                style="margin-right: 6px; vertical-align: middle"
-              >
-                {{ doc.type === 'excel' ? 'Excel' : 'MD' }}
-              </n-tag>{{ doc.title }}
+            <div class="grid-card-top">
+              <span class="type-icon" :class="doc.type === 'excel' ? 'type-icon--excel' : 'type-icon--md'" aria-hidden="true">
+                <!-- Excel 表格图标 -->
+                <svg v-if="doc.type === 'excel'" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                  stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="3" y="4" width="18" height="16" rx="2" />
+                  <path d="M3 9.5h18M3 14.5h18M9 4v16M15 4v16" />
+                </svg>
+                <!-- MD 文档图标 -->
+                <svg v-else xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                  stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M7 3.5h7.2L18 7.3V20a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4.5a1 1 0 0 1 1-1z" />
+                  <path d="M14 3.5V7.5H18" />
+                  <path d="M9 12.5h6M9 16h4" />
+                </svg>
+              </span>
+              <div class="grid-card-title" :title="doc.title">{{ doc.title }}</div>
             </div>
-            <n-space size="small" align="center" style="margin-top: 8px">
+            <div class="grid-card-tags">
               <n-tag v-if="doc.role === 'viewer'" size="tiny" type="warning" round>{{ $t('documents.viewerTag') }}</n-tag>
               <n-tag v-else-if="doc.role === 'editor'" size="tiny" type="info" round>{{ $t('documents.editorTag') }}</n-tag>
-              <n-tag v-if="folderName(doc.folder_id)" size="tiny" round>{{ folderName(doc.folder_id) }}</n-tag>
+              <n-tag v-if="folderName(doc.folder_id)" size="tiny" round :bordered="false">{{ folderName(doc.folder_id) }}</n-tag>
               <span
                 v-if="(doc.members?.length ?? 0) > 0"
                 class="member-stack"
@@ -639,20 +664,19 @@ const emptyStateDescription = computed(() => {
                   v-for="person in memberAvatars(doc).slice(0, 3)"
                   :key="person.id ?? person.name"
                   round
-                  :size="18"
+                  :size="20"
                   :color="person.color"
                 >
                   {{ person.name.slice(0, 1) }}
                 </n-avatar>
               </span>
-            </n-space>
-            <n-text depth="3" style="font-size: 12px; display: block; margin-top: 8px">
-              {{ doc.role && doc.role !== 'owner' ? t('documents.sharedBy', { name: doc.owner?.name ?? $t('documents.unknownUser') }) : '' }}
-              {{ formatTime(doc.updated_at) }}
-            </n-text>
+            </div>
           </div>
           <template #footer>
-            <n-space justify="space-between" align="center">
+            <div class="card-footer">
+              <span class="card-meta">
+                <n-text depth="3">{{ formatTime(doc.updated_at) }}</n-text>
+              </span>
               <n-space align="center" size="small">
                 <n-button
                   size="tiny"
@@ -677,15 +701,16 @@ const emptyStateDescription = computed(() => {
                 <n-button size="tiny" type="primary" quaternary @click="openDoc(doc)">
                   打开
                 </n-button>
+                <n-dropdown
+                  v-if="doc.role === 'owner'"
+                  :options="ownerMenuOptions(doc)"
+                  placement="bottom-end"
+                  @select="(key: string) => handleOwnerMenu(key, doc)"
+                >
+                  <n-button size="tiny" quaternary :aria-label="$t('documents.moreAria')">⋯</n-button>
+                </n-dropdown>
               </n-space>
-              <n-dropdown
-                v-if="doc.role === 'owner'"
-                :options="ownerMenuOptions(doc)"
-                @select="(key: string) => handleOwnerMenu(key, doc)"
-              >
-                <n-button size="tiny" quaternary :aria-label="$t('documents.moreAria')">⋯</n-button>
-              </n-dropdown>
-            </n-space>
+            </div>
           </template>
         </n-card>
         </template>
@@ -696,35 +721,27 @@ const emptyStateDescription = computed(() => {
         <div v-for="group in displayGroups" :key="group.key">
           <h3 v-if="group.title" class="group-title">{{ group.title }}</h3>
           <n-list bordered class="doc-list">
-            <n-list-item v-for="doc in group.docs" :key="doc.id">
+            <n-list-item v-for="doc in group.docs" :key="doc.id" class="doc-row">
           <template #prefix>
-            <!-- Excel 表格图标 -->
-            <n-icon v-if="doc.type === 'excel'" size="24" color="#18a058">
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
-                stroke="currentColor" stroke-width="1.5">
-                <rect x="3" y="4" width="18" height="16" rx="1" />
-                <path d="M3 9h18M3 14.5h18M9 4v16M15 4v16" />
+            <span class="type-icon" :class="doc.type === 'excel' ? 'type-icon--excel' : 'type-icon--md'" aria-hidden="true">
+              <!-- Excel 表格图标 -->
+              <svg v-if="doc.type === 'excel'" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="4" width="18" height="16" rx="2" />
+                <path d="M3 9.5h18M3 14.5h18M9 4v16M15 4v16" />
               </svg>
-            </n-icon>
-            <!-- MD 文档图标 -->
-            <n-icon v-else size="24" depth="3">
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
-                stroke="currentColor" stroke-width="1.5">
-                <path d="M6 2h9l5 5v15H6z" />
-                <path d="M14 2v6h6" />
+              <!-- MD 文档图标 -->
+              <svg v-else xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M7 3.5h7.2L18 7.3V20a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4.5a1 1 0 0 1 1-1z" />
+                <path d="M14 3.5V7.5H18" />
+                <path d="M9 12.5h6M9 16h4" />
               </svg>
-            </n-icon>
+            </span>
           </template>
           <n-thing>
             <template #header>
               <span class="title-row">
-                <n-tag
-                  size="tiny"
-                  round
-                  :type="doc.type === 'excel' ? 'success' : 'default'"
-                >
-                  {{ doc.type === 'excel' ? 'Excel' : 'MD' }}
-                </n-tag>
                 <span v-if="documents.searching" class="title-text">
                   <template v-for="(seg, index) in highlight(doc.title, documents.activeQuery)" :key="index">
                     <mark v-if="seg.hit" class="search-hit">{{ seg.text }}</mark>
@@ -767,7 +784,7 @@ const emptyStateDescription = computed(() => {
                 </n-tag>
 
                 <!-- 文件夹徽标（folders 未加载完时名字为空，不渲染空标签） -->
-                <n-tag v-if="folderName(doc.folder_id)" size="tiny" round>
+                <n-tag v-if="folderName(doc.folder_id)" size="tiny" round :bordered="false">
                   {{ folderName(doc.folder_id) }}
                 </n-tag>
 
@@ -804,7 +821,7 @@ const emptyStateDescription = computed(() => {
             </template>
           </n-thing>
           <template #suffix>
-            <n-space align="center">
+            <n-space align="center" size="small" class="row-actions">
               <n-button
                 size="small"
                 quaternary
@@ -828,10 +845,11 @@ const emptyStateDescription = computed(() => {
               <n-button size="small" type="primary" quaternary @click="openDoc(doc)">
                 打开
               </n-button>
-              <!-- 桌面：平铺操作；移动：收进「⋯」 -->
-              <n-space v-if="doc.role === 'owner' && !isMobile" size="small">
+              <!-- 桌面：平铺操作；移动：收进「⋯」（操作默认收进 ⋯，hover 才显形次要项） -->
+              <n-space v-if="doc.role === 'owner' && !isMobile" size="small" class="row-secondary">
                 <n-dropdown
                   :options="ownerMenuOptions(doc)"
+                  placement="bottom-end"
                   @select="(key: string) => handleOwnerMenu(key, doc)"
                 >
                   <n-button size="small" quaternary>{{ $t('folders.moveBtn') }}</n-button>
@@ -848,6 +866,7 @@ const emptyStateDescription = computed(() => {
               <n-dropdown
                 v-else-if="doc.role === 'owner'"
                 :options="ownerMenuOptions(doc)"
+                placement="bottom-end"
                 @select="(key: string) => handleOwnerMenu(key, doc)"
               >
                 <n-button size="small" quaternary :aria-label="$t('documents.moreAria')">⋯</n-button>
@@ -975,17 +994,69 @@ const emptyStateDescription = computed(() => {
 </template>
 
 <style scoped>
+/* ---------------- 头部：标题 + 主行动（搜索/新建/导入/回收站） ---------------- */
 .list-header {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
+  justify-content: space-between;
   flex-wrap: wrap;
-  gap: 10px 12px;
-  margin-bottom: 16px;
+  gap: 12px 16px;
+  margin-bottom: 14px;
 }
-/* 标题占左侧余下空间，控件整体靠右（替代原 space-between 双容器结构） */
+.list-heading {
+  min-width: 0;
+  margin-right: auto; /* 把右侧操作区推到行尾，并让它吃满剩余宽度 */
+}
 .list-header h2 {
   margin: 0;
-  margin-right: auto;
+  font-size: 22px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+/* 副标题给「有多少篇」一个轻量交代，不与主标题抢层级 */
+.list-count {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--text-3);
+}
+.list-actions {
+  display: flex;
+  align-items: center;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
+}
+/* 搜索框可伸缩但封顶：既能填满空隙，也不会挤占整行把标题压扁 */
+.search-box {
+  flex: 1 1 200px;
+  min-width: 160px;
+  max-width: 340px;
+}
+
+/* ---------------- 筛选工具栏：文件夹/排序/视图与主行动分层 ---------------- */
+.filter-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  padding: 8px 12px;
+  margin-bottom: 18px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md, 10px);
+  box-shadow: var(--shadow-card);
+}
+.filter-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.filter-group-end {
+  margin-left: auto;
 }
 .ctl-sort {
   width: 110px;
@@ -993,33 +1064,66 @@ const emptyStateDescription = computed(() => {
 .ctl-folder {
   width: 130px;
 }
-/* 管理弹窗：新建行与列表行 */
-.folder-create-row {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 12px;
-}
-.folder-manage-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.folder-manage-row {
-  display: flex;
+
+/* ---------------- 文档类型图标：MD=蓝 / Excel=绿，图标底与描边同源 ---------------- */
+.type-icon {
+  display: inline-flex;
   align-items: center;
-  gap: 8px;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  flex: none;
+  border-radius: 10px;
+  color: var(--type-md);
+  background: var(--type-md-bg);
 }
-.folder-manage-name {
-  flex: 1;
+.type-icon svg {
+  width: 20px;
+  height: 20px;
+}
+.type-icon--excel {
+  color: var(--type-excel);
+  background: var(--type-excel-bg);
+}
+
+/* ---------------- 列表视图 ---------------- */
+.doc-list {
+  border-radius: var(--radius-md, 10px);
+  overflow: hidden;
+}
+/* 主内容可收缩、操作区固定宽度：否则 n-space 被压扁后换行，把整行撑到 200px 高 */
+.doc-row :deep(.n-list-item__main) {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.doc-row :deep(.n-list-item__suffix) {
+  flex: 0 0 auto;
+}
+/* 行内操作默认收进 ⋯，hover 才显形次要项：列表更干净，操作仍一键可达 */
+.row-secondary {
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.doc-row:hover .row-secondary,
+.doc-row:focus-within .row-secondary {
+  opacity: 1;
+}
+@media (hover: none) {
+  /* 触屏没有 hover，直接常显，避免操作藏起来够不着 */
+  .row-secondary {
+    opacity: 1;
+  }
+}
+.title-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.title-text {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.search-box {
-  width: min(260px, 100%);
-}
-.doc-list {
-  border-radius: 8px;
 }
 .search-hit {
   background: var(--search-hit-bg);
@@ -1046,10 +1150,15 @@ const emptyStateDescription = computed(() => {
 .skeleton-list {
   margin-top: 8px;
 }
+.doc-empty {
+  margin-top: 64px;
+}
+
+/* ---------------- 网格视图 ---------------- */
 .doc-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: 14px;
+  grid-template-columns: repeat(auto-fill, minmax(248px, 1fr));
+  gap: 16px;
 }
 /* 分区组头：列表视图为小标题，网格视图作为跨满整行的网格项 */
 .group-title {
@@ -1064,29 +1173,66 @@ const emptyStateDescription = computed(() => {
 }
 .doc-grid-card {
   cursor: pointer;
-  transition: box-shadow 0.15s ease;
+  transition:
+    box-shadow 0.18s ease,
+    transform 0.18s ease,
+    border-color 0.18s ease;
+  border-color: var(--border-faint);
 }
+/* 上浮 + 阴影加深：明确「整卡可点」 */
 .doc-grid-card:hover {
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.09);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-lift);
+  border-color: var(--border-subtle);
 }
-.title-row {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
+.doc-grid-card:focus-within {
+  border-color: var(--type-md);
 }
-.title-text {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.grid-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.grid-card-top {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
 }
 .grid-card-title {
   font-weight: 600;
-  font-size: 16px;
+  font-size: 15px;
+  line-height: 1.45;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   display: -webkit-box;
   -webkit-line-clamp: 2;
+  line-clamp: 2;
   -webkit-box-orient: vertical;
+}
+/* 标签贴住标题下方（不吸底）：卡片矮一截，空态不再有大片留白 */
+.grid-card-tags {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+/* 卡片页脚：时间靠左、操作靠右，用细线与卡体分隔 */
+.card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-faint);
+}
+.card-meta {
+  font-size: 12px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .member-stack {
   display: inline-flex;
@@ -1094,39 +1240,38 @@ const emptyStateDescription = computed(() => {
 }
 .member-stack :deep(.n-avatar + .n-avatar) {
   margin-left: -6px;
-  border: 1.5px solid #fff;
+  border: 1.5px solid var(--bg-surface);
 }
 .member-stack :deep(.n-avatar:not(:first-child)) {
   margin-left: -6px;
 }
 @media (max-width: 767px) {
-  /* 移动端三行布局：①标题+新建 ②搜索全宽 ③排序+视图+⋯ */
-  .ctl-create {
-    order: 1;
+  .list-header h2 {
+    font-size: 20px;
   }
   .search-box {
-    order: 2;
     flex: 1 0 100%;
     width: 100%;
   }
+  .list-actions {
+    width: 100%;
+  }
+  .list-actions .ctl-create {
+    margin-left: auto;
+  }
+  .filter-bar {
+    padding: 8px 10px;
+  }
   .ctl-folder {
-    order: 3;
     width: 120px;
   }
-  .ctl-folder-manage {
-    order: 4;
+  /* 移动端没有 hover，操作按钮常显 */
+  .row-secondary {
+    opacity: 1;
   }
-  .ctl-sort {
-    order: 5;
-  }
-  .ctl-view {
-    order: 6;
-  }
-  .ctl-more {
-    order: 7;
-  }
-  .list-header h2 {
-    font-size: 16px;
+  .doc-grid {
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 12px;
   }
 }
 </style>

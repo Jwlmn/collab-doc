@@ -23,10 +23,21 @@ export const lightThemeOverrides: GlobalThemeOverrides = {
     // 加深到 #6a707a（约 4.9:1），仍明显浅于 textColor2 以保住层级
     textColor3: '#6a707a',
     placeholderColor: '#a9aeb8',
-    bodyColor: '#f7f8fa',
+    bodyColor: '#f6f7f9',
     borderColor: '#e5e6eb',
     dividerColor: '#e5e6eb',
-    borderRadius: '6px',
+    // 对齐 index.html 的 --radius-md：控件与卡片圆角统一，避免 6px/10px 混用
+    borderRadius: '8px',
+    borderRadiusSmall: '6px',
+  },
+  Card: {
+    borderRadius: '12px',
+    // 用自定义阴影变量，让卡片与页面阴影体系同源
+    boxShadow: 'var(--shadow-card)',
+    boxShadowHover: 'var(--shadow-lift)',
+  },
+  Button: {
+    fontWeightStrong: '500',
   },
 }
 
@@ -44,21 +55,30 @@ export const darkThemeOverrides: GlobalThemeOverrides = {
     errorColorHover: '#ec8ba0',
     errorColorPressed: '#c24a62',
     errorColorSuppl: '#ec8ba0',
-    textColorBase: '#e5e6eb',
-    textColor1: '#e5e6eb',
+    textColorBase: '#e9eaee',
+    textColor1: '#e9eaee',
     textColor2: '#a9aeb8',
     textColor3: '#86909c',
     placeholderColor: '#6a707a',
-    bodyColor: '#17181c',
-    borderColor: '#2c2f36',
-    dividerColor: '#2c2f36',
-    borderRadius: '6px',
+    bodyColor: '#141519',
+    borderColor: '#2b2e35',
+    dividerColor: '#2b2e35',
+    borderRadius: '8px',
+    borderRadiusSmall: '6px',
+  },
+  Card: {
+    borderRadius: '12px',
+    boxShadow: 'var(--shadow-card)',
+    boxShadowHover: 'var(--shadow-lift)',
+  },
+  Button: {
+    fontWeightStrong: '500',
   },
   Layout: {
-    // 对齐 index.html 的深色变量：页面 #17181c、顶栏/卡片 #1e2025，
+    // 对齐 index.html 的深色变量：页面 #141519、顶栏/卡片 #1c1e23，
     // 否则文档列表等未自带背景的页面会露出 naive 深色默认的 #101014 色块
-    color: '#17181c',
-    colorEmbedded: '#17181c',
-    headerColor: '#1e2025',
+    color: '#141519',
+    colorEmbedded: '#141519',
+    headerColor: '#1c1e23',
   },
 }

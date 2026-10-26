@@ -11,6 +11,7 @@ export {}
 /* prettier-ignore */
 declare module 'vue' {
   export interface GlobalComponents {
+    AuthShell: typeof import('./src/components/AuthShell.vue')['default']
     CommentDrawer: typeof import('./src/components/CommentDrawer.vue')['default']
     EditorToolbar: typeof import('./src/components/EditorToolbar.vue')['default']
     NAlert: typeof import('naive-ui')['NAlert']
