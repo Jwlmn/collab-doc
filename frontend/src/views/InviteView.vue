@@ -60,7 +60,11 @@ async function handleAccept(): Promise<void> {
   position: relative;
   display: flex;
   justify-content: center;
-  padding-top: 96px;
+  /* 上下留白均衡，卡片不贴顶 */
+  padding: 72px 16px;
+  background:
+    radial-gradient(120% 80% at 50% 0%, rgba(64, 152, 252, 0.1) 0%, transparent 60%),
+    var(--bg-page);
 }
 .invite-theme-toggle {
   position: absolute;
@@ -69,5 +73,7 @@ async function handleAccept(): Promise<void> {
 }
 .invite-card {
   width: min(440px, 92vw);
+  border-radius: var(--radius-lg, 14px);
+  box-shadow: var(--shadow-float);
 }
 </style>

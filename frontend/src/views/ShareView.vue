@@ -106,6 +106,8 @@ onMounted(async () => {
 
 .share-expiry {
   margin-left: auto;
-  color: #b37feb;
+  /* 走主题变量：硬编码紫 #b37feb 在深色底上对比度不足 */
+  color: inherit;
+  font-weight: 600;
 }
 </style>

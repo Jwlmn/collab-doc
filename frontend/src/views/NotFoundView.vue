@@ -33,7 +33,10 @@ const router = useRouter()
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--bg-page);
+  /* 与登录页同源的柔和渐变，避免纯色背景显得生硬 */
+  background:
+    radial-gradient(120% 80% at 50% 20%, rgba(64, 152, 252, 0.1) 0%, transparent 60%),
+    var(--bg-page);
 }
 .not-found-theme-toggle {
   position: absolute;
