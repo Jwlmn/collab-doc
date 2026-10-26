@@ -198,10 +198,20 @@ function handleUserMenu(key: string) {
   padding-left: calc(24px + env(safe-area-inset-left));
   padding-right: calc(24px + env(safe-area-inset-right));
 }
-/* 认证页：内容区不留白、不居中限宽，交给 AuthShell 自己铺满可用高度 */
+/* 认证页：内容区不留白、不居中限宽，交给 AuthShell 自己铺满可用高度。
+   显式定高 + 裁溢出：n-layout-content 内部还套了一层 naive layout，其滚动容器
+   不跟随外层高度（ch 比 sh 小），不定高就会在窄屏多出一截滚动条。 */
 .layout-content--bare {
   max-width: none;
   padding: 0;
+  height: calc(100vh - 60px);
+  height: calc(100dvh - 60px);
+  overflow: hidden;
+}
+/* 嵌套滚动容器撑满父级并取消自滚动：内容已由 AuthShell 自身布局，不该再有第二条滚动 */
+.layout-content--bare :deep(.n-layout-scroll-container) {
+  height: 100%;
+  overflow: hidden;
 }
 @media (max-width: 640px) {
   .header-inner {
