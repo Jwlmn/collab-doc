@@ -146,8 +146,19 @@ body {
   /* 富文本文档：顶栏 / 工具栏 / 气泡菜单收掉，纸面拍平占满 */
   .editor-topbar,
   .fmt-toolbar,
-  .bubble-menu {
+  .bubble-menu,
+  .ws-left,
+  .ws-right,
+  .ws-rail,
+  .panel-toggle {
     display: none !important;
+  }
+  /* 三栏工作区拍平：中栏不再内滚 */
+  .workspace,
+  .ws-center {
+    display: block !important;
+    overflow: visible !important;
+    height: auto !important;
   }
   .editor-page {
     height: auto;

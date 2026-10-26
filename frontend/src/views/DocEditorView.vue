@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, nextTick, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useLocalStorage } from '@vueuse/core'
 import { useMessage } from 'naive-ui'
 import { Editor, EditorContent } from '@tiptap/vue-3'
 import { relativePositionToAbsolutePosition } from '@tiptap/y-tiptap'
@@ -19,12 +20,16 @@ import { getCollabUrl } from '../utils/collab'
 import { userColor as colorOf } from '../utils/color'
 import VersionDrawer from '../components/VersionDrawer.vue'
 import CommentDrawer from '../components/CommentDrawer.vue'
+import CommentPanelBody from '../components/CommentPanelBody.vue'
+import DocumentTree from '../components/DocumentTree.vue'
+import EditorWorkspace from '../components/EditorWorkspace.vue'
 import EditorToolbar from '../components/EditorToolbar.vue'
 import ShareModal from '../components/ShareModal.vue'
 import ThemeToggle from '../components/ThemeToggle.vue'
 import { useI18n } from 'vue-i18n'
 import { useImportFlowStore } from '../stores/importFlow'
 import { useAutoSnapshot } from '../composables/useAutoSnapshot'
+import { useIsMobile } from '../composables/useIsMobile'
 import { serializeMarkdown } from '../io/markdown'
 import { jsonToDocxBlob } from '../io/docx-export'
 import { downloadText } from '../io/download'
@@ -74,6 +79,19 @@ const collaborators = ref<Collaborator[]>([])
 const bubbleTick = ref(0)
 const versionDrawerVisible = ref(false)
 const commentDrawerVisible = ref(false)
+const isMobile = useIsMobile()
+/** 三栏工作区：左文件树 / 右评论面板（桌面端；折叠状态持久化） */
+const leftPanelOpen = useLocalStorage('collab-doc-editor-left', true)
+const rightPanelOpen = useLocalStorage('collab-doc-editor-right', false)
+
+/** 评论入口：桌面端开右侧面板，移动端开抽屉 */
+function openComments(): void {
+  if (isMobile.value) {
+    commentDrawerVisible.value = true
+  } else {
+    rightPanelOpen.value = true
+  }
+}
 const helpVisible = ref(false)
 const linkVisible = ref(false)
 const linkUrl = ref('https://')
@@ -342,7 +360,14 @@ function applyFollow(): void {
 
       const coords = ed.view.coordsAtPos(absolute)
       if (!Number.isFinite(coords.top)) return
-      window.scrollBy({ top: coords.top - window.innerHeight / 2, behavior: 'smooth' })
+      // 三栏布局下滚动容器是 ws-center 而非 window
+      const scroller = document.querySelector('.ws-center')
+      if (scroller instanceof HTMLElement) {
+        const rect = scroller.getBoundingClientRect()
+        scroller.scrollBy({ top: coords.top - rect.top - rect.height / 2, behavior: 'smooth' })
+      } else {
+        window.scrollBy({ top: coords.top - window.innerHeight / 2, behavior: 'smooth' })
+      }
     } catch {
       // 相对位置失效（对端正在改文档）：静默，等下一次 awareness 变化
     }
@@ -365,9 +390,9 @@ function handleKeydown(event: KeyboardEvent): void {
       target.isContentEditable)
 
   if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
-    if (!commentDrawerVisible.value) {
+    if (!commentDrawerVisible.value && !rightPanelOpen.value) {
       event.preventDefault()
-      commentDrawerVisible.value = true
+      openComments()
     }
     return
   }
@@ -698,7 +723,12 @@ async function handleRename() {
         </n-dropdown>
         <!-- 访客无权读评论/版本（接口会 401），两个入口整体隐藏 -->
         <n-badge v-if="!isShare" :value="commentBadge" :max="99" :show="commentBadge > 0">
-          <n-button quaternary size="small" @click="commentDrawerVisible = true">{{ $t('editor.commentsBtn') }}</n-button>
+          <n-button
+            quaternary
+            size="small"
+            :type="!isMobile && rightPanelOpen ? 'primary' : 'default'"
+            @click="openComments"
+          >{{ $t('editor.commentsBtn') }}</n-button>
         </n-badge>
         <n-button v-if="!isShare" quaternary size="small" @click="versionDrawerVisible = true">{{ $t('editor.versionsBtn') }}</n-button>
 
@@ -782,15 +812,24 @@ async function handleRename() {
       </n-space>
     </div>
 
-    <!-- P1-5：纸面骨架（editor 未就绪前不撤，消除空纸面窗口） -->
-    <div v-if="loading || !editor" class="editor-loading">
-      <div class="editor-surface skeleton-surface">
-        <n-skeleton height="28px" width="45%" style="margin-bottom: 28px" />
-        <n-skeleton text :lines="5" />
-      </div>
-    </div>
+    <EditorWorkspace
+      v-model:left-open="leftPanelOpen"
+      v-model:right-open="rightPanelOpen"
+      :panels-enabled="!isShare"
+    >
+      <template #left>
+        <DocumentTree :current-id="docId" />
+      </template>
 
-    <div v-else class="editor-surface">
+      <!-- P1-5：纸面骨架（editor 未就绪前不撤，消除空纸面窗口） -->
+      <div v-if="loading || !editor" class="editor-loading">
+        <div class="editor-surface skeleton-surface">
+          <n-skeleton height="28px" width="45%" style="margin-bottom: 28px" />
+          <n-skeleton text :lines="5" />
+        </div>
+      </div>
+
+      <div v-else class="editor-surface">
       <!-- 打印专用标题头（屏上不显示）：顶栏被 @media print 收掉后纸面仍要标题 -->
       <div class="print-header">
         <h1>{{ titleEditing || meta?.title || $t('editor.untitled') }}</h1>
@@ -865,6 +904,18 @@ async function handleRename() {
       </div>
     </div>
 
+      <template #right>
+        <div class="ws-comments">
+          <CommentPanelBody
+            :document-id="docId"
+            :can-manage="auth.user?.id === meta?.user_id"
+            @read="fetchCommentBadge"
+            @changed="fetchCommentBadge"
+          />
+        </div>
+      </template>
+    </EditorWorkspace>
+
     <VersionDrawer
       v-if="!isShare"
       v-model:show="versionDrawerVisible"
@@ -926,11 +977,21 @@ async function handleRename() {
 
 <style scoped>
 .editor-page {
-  min-height: 100vh;
-  min-height: 100dvh; /* 移动端地址栏伸缩时视口高度跟随 */
+  /* 三栏工作区：页面定高不滚动，滚动交给 ws-center / 面板内层 */
+  height: 100vh;
+  height: 100dvh; /* 移动端地址栏伸缩时视口高度跟随 */
   display: flex;
   flex-direction: column;
+  overflow: hidden;
   background: var(--bg-page);
+}
+/* 右栏评论面板容器：吃满面板高度 */
+.ws-comments {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding-top: 36px; /* 给面板顶部折叠按钮让位 */
 }
 .editor-topbar {
   min-height: 56px;

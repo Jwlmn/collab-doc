@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useLocalStorage } from '@vueuse/core'
 import { useMessage } from 'naive-ui'
 import { HocuspocusProvider } from '@hocuspocus/provider'
 import * as Y from 'yjs'
@@ -25,9 +26,13 @@ import {
 import { useAutoSnapshot } from '../composables/useAutoSnapshot'
 import { evaluateCellDisplay, isFormula } from '../io/formula'
 import CommentDrawer from '../components/CommentDrawer.vue'
+import CommentPanelBody from '../components/CommentPanelBody.vue'
+import DocumentTree from '../components/DocumentTree.vue'
+import EditorWorkspace from '../components/EditorWorkspace.vue'
 import SheetVersionDrawer from '../components/SheetVersionDrawer.vue'
 import ShareModal from '../components/ShareModal.vue'
 import ThemeToggle from '../components/ThemeToggle.vue'
+import { useIsMobile } from '../composables/useIsMobile'
 import type { DocumentMeta } from '../types'
 
 interface CollabTokenData {
@@ -74,6 +79,19 @@ const versionDrawerVisible = ref(false)
 const shareVisible = ref(false)
 const helpVisible = ref(false)
 const unreadComments = ref(0)
+const isMobile = useIsMobile()
+/** 三栏工作区：左文件树 / 右评论面板（桌面端；折叠状态持久化） */
+const leftPanelOpen = useLocalStorage('collab-doc-editor-left', true)
+const rightPanelOpen = useLocalStorage('collab-doc-editor-right', false)
+
+/** 评论入口：桌面端开右侧面板，移动端开抽屉 */
+function openComments(): void {
+  if (isMobile.value) {
+    commentDrawerVisible.value = true
+  } else {
+    rightPanelOpen.value = true
+  }
+}
 const exporting = ref(false)
 /** 数据 seed/迁移完成前保持骨架，避免空表格可交互的竞态窗口 */
 const ready = ref(false)
@@ -1214,9 +1232,9 @@ function handleKeydown(event: KeyboardEvent): void {
       target.isContentEditable)
 
   if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
-    if (!commentDrawerVisible.value) {
+    if (!commentDrawerVisible.value && !rightPanelOpen.value) {
       event.preventDefault()
-      commentDrawerVisible.value = true
+      openComments()
     }
     return
   }
@@ -1494,7 +1512,12 @@ onBeforeUnmount(() => {
         <n-button v-if="!isShare" quaternary size="small" @click="versionDrawerVisible = true">{{ $t('excel.versionsBtn') }}</n-button>
         <!-- 访客无权读评论/版本（接口会 401），两个入口整体隐藏 -->
         <n-badge v-if="!isShare" :value="unreadComments" :max="99" :show="unreadComments > 0">
-          <n-button quaternary size="small" @click="commentDrawerVisible = true">{{ $t('editor.commentsBtn') }}</n-button>
+          <n-button
+            quaternary
+            size="small"
+            :type="!isMobile && rightPanelOpen ? 'primary' : 'default'"
+            @click="openComments"
+          >{{ $t('editor.commentsBtn') }}</n-button>
         </n-badge>
 
         <n-popover trigger="click" placement="bottom-end">
@@ -1576,6 +1599,15 @@ onBeforeUnmount(() => {
         </span>
       </n-space>
     </div>
+
+    <EditorWorkspace
+      v-model:left-open="leftPanelOpen"
+      v-model:right-open="rightPanelOpen"
+      :panels-enabled="!isShare"
+    >
+      <template #left>
+        <DocumentTree :current-id="docId" />
+      </template>
 
     <!-- 格式与行列工具条 -->
     <div class="format-bar">
@@ -1874,6 +1906,17 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
+      <template #right>
+        <div class="ws-comments">
+          <CommentPanelBody
+            :document-id="docId"
+            :can-manage="auth.user?.id === meta?.user_id"
+            @read="unreadComments = 0"
+          />
+        </div>
+      </template>
+    </EditorWorkspace>
+
     <CommentDrawer
       v-if="!isShare"
       v-model:show="commentDrawerVisible"
@@ -1924,6 +1967,14 @@ onBeforeUnmount(() => {
   flex-direction: column;
   overflow: hidden;
   background: var(--bg-page);
+}
+/* 右栏评论面板容器：吃满面板高度 */
+.ws-comments {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding-top: 36px; /* 给面板顶部折叠按钮让位 */
 }
 .sheet-topbar {
   min-height: 56px;

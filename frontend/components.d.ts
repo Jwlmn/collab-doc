@@ -13,7 +13,10 @@ declare module 'vue' {
   export interface GlobalComponents {
     AuthShell: typeof import('./src/components/AuthShell.vue')['default']
     CommentDrawer: typeof import('./src/components/CommentDrawer.vue')['default']
+    CommentPanelBody: typeof import('./src/components/CommentPanelBody.vue')['default']
+    DocumentTree: typeof import('./src/components/DocumentTree.vue')['default']
     EditorToolbar: typeof import('./src/components/EditorToolbar.vue')['default']
+    EditorWorkspace: typeof import('./src/components/EditorWorkspace.vue')['default']
     NAlert: typeof import('naive-ui')['NAlert']
     NAvatar: typeof import('naive-ui')['NAvatar']
     NBadge: typeof import('naive-ui')['NBadge']
