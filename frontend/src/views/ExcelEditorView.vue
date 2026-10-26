@@ -1935,7 +1935,11 @@ onBeforeUnmount(() => {
   padding: 8px 16px;
   padding-left: calc(16px + env(safe-area-inset-left));
   padding-right: calc(16px + env(safe-area-inset-right));
-  background: var(--bg-surface);
+  /* 与 MD 编辑器顶栏同一套毛玻璃处理，两个编辑器观感一致。
+     本页是固定视口布局（页面自身不滚动），无需 sticky。 */
+  background: color-mix(in srgb, var(--bg-surface) 82%, transparent);
+  backdrop-filter: saturate(180%) blur(12px);
+  -webkit-backdrop-filter: saturate(180%) blur(12px);
   border-bottom: 1px solid var(--border-subtle);
 }
 .format-bar {
@@ -1952,6 +1956,7 @@ onBeforeUnmount(() => {
 }
 .title-input {
   width: min(320px, 42vw);
+  font-weight: 600;
 }
 .title-input :deep(.n-input__state-border) {
   transition: border-color 0.2s;
