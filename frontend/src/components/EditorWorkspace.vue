@@ -117,55 +117,107 @@ const isMobile = useIsMobile()
   background: var(--bg-surface);
   border-left: 1px solid var(--border-subtle);
 }
-/* 面板顶部折叠按钮：浮在面板右上/左上角，不占布局位 */
+/* 面板顶部折叠按钮：浮在面板右上/左上角，不占布局位。
+   32×32 命中区（图标仍小巧），带可见描边圆底，避免「找不到、点不中」 */
 .panel-toggle {
   position: absolute;
   top: 8px;
   z-index: 5;
-  width: 22px;
-  height: 22px;
+  width: 32px;
+  height: 32px;
   display: flex;
   align-items: center;
   justify-content: center;
-  border: none;
-  border-radius: var(--radius-sm, 6px);
-  background: transparent;
-  color: var(--text-3);
-  font-size: 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md, 8px);
+  background: var(--bg-surface);
+  color: var(--text-2);
+  font-size: 14px;
+  line-height: 1;
   cursor: pointer;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease,
+    border-color 0.15s ease;
 }
 .panel-toggle:hover {
   background: var(--bg-hover);
   color: var(--text-1);
+  border-color: var(--border-strong);
+}
+.panel-toggle:focus-visible {
+  outline: 2px solid var(--accent, #2080f0);
+  outline-offset: 1px;
 }
 .ws-left .panel-toggle {
-  right: 4px;
+  right: 6px;
 }
 .ws-right .panel-toggle {
-  left: 4px;
+  left: 6px;
 }
-/* 边缘常驻开关条 */
+
+/* 折叠后的边缘开关条：加宽到 32px，并让整条边（含上下留白）都可点。
+   原来 18px 窄条鼠标难命中，文件树藏起来后尤其难再打开。 */
 .ws-rail {
+  position: relative;
   flex: none;
-  width: 18px;
+  width: 32px;
   border: none;
   border-left: 1px solid var(--border-subtle);
   background: var(--bg-muted);
-  color: var(--text-3);
-  font-size: 10px;
+  color: var(--text-2);
+  font-size: 13px;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   writing-mode: vertical-lr;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease,
+    width 0.15s ease;
+}
+/* 把手本体只有 32px 宽，但用伪元素向面板内侧扩出 20px 的透明命中区，
+   命中区总宽 52px 且不占布局、不遮挡内容交互 */
+.ws-rail::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 20px;
 }
 .ws-rail.left {
   order: -1;
   border-left: none;
   border-right: 1px solid var(--border-subtle);
 }
+.ws-rail.left::before {
+  right: 0;
+}
+.ws-rail.right::before {
+  left: 0;
+}
 .ws-rail:hover {
-  background: var(--bg-hover);
+  background: var(--bg-active);
   color: var(--text-1);
+  width: 40px; /* 悬停时略加宽，给「这里能点」的即时反馈 */
+}
+.ws-rail:focus-visible {
+  outline: 2px solid var(--accent, #2080f0);
+  outline-offset: -2px;
+}
+/* 触屏：把手放大到 44px，对齐移动端最小可点尺寸 */
+@media (pointer: coarse) {
+  .ws-rail {
+    width: 44px;
+    font-size: 15px;
+  }
+  .ws-rail:hover {
+    width: 44px;
+  }
+  .panel-toggle {
+    width: 40px;
+    height: 40px;
+  }
 }
 </style>
