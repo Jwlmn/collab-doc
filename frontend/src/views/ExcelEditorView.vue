@@ -1604,6 +1604,7 @@ onBeforeUnmount(() => {
       v-model:left-open="leftPanelOpen"
       v-model:right-open="rightPanelOpen"
       :panels-enabled="!isShare"
+      :center-overflow="false"
     >
       <template #left>
         <DocumentTree :current-id="docId" />

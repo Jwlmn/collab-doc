@@ -13,8 +13,14 @@ withDefaults(
     rightOpen: boolean
     /** 访客分享态整体关闭两侧面板（含边缘开关） */
     panelsEnabled?: boolean
+    /**
+     * 中栏是否由 ws-center 承担滚动。MD 编辑器靠它滚动（默认 true）；
+     * Excel 的 .grid-wrap 自身就是滚动容器，关掉外层 overflow 可避免
+     * 表格上方一旦加行/工具条就出现双层滚动条。
+     */
+    centerOverflow?: boolean
   }>(),
-  { panelsEnabled: true },
+  { panelsEnabled: true, centerOverflow: true },
 )
 
 const emit = defineEmits<{
@@ -40,7 +46,7 @@ const isMobile = useIsMobile()
       <slot name="left" />
     </aside>
 
-    <div class="ws-center">
+    <div class="ws-center" :class="{ 'no-overflow': !centerOverflow }">
       <slot />
     </div>
 
@@ -105,6 +111,10 @@ const isMobile = useIsMobile()
   display: flex;
   flex-direction: column;
   overflow-y: auto;
+}
+/* Excel 等自带滚动容器的视图：中栏不参与滚动，只负责把高度传下去 */
+.ws-center.no-overflow {
+  overflow-y: hidden;
 }
 .ws-right {
   position: relative;
