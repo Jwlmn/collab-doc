@@ -115,47 +115,52 @@ async function changePassword() {
 }
 
 const themeOptions = computed(() => [
-  { label: t('settings.themeSystem'), value: 'auto' },
-  { label: t('settings.themeLight'), value: 'light' },
-  { label: t('settings.themeDark'), value: 'dark' },
+  { label: t('settings.themeSystem'), value: 'auto', desc: t('settings.themeSystemDesc') },
+  { label: t('settings.themeLight'), value: 'light', desc: t('settings.themeLightDesc') },
+  { label: t('settings.themeDark'), value: 'dark', desc: t('settings.themeDarkDesc') },
 ])
 
-const languageOptions = [
-  { label: '简体中文', value: 'zh-CN' },
-  { label: 'English', value: 'en' },
-]
+const languageOptions = computed(() => [
+  { label: '简体中文', value: 'zh-CN', hint: t('settings.langZhDesc') },
+  { label: 'English', value: 'en', hint: t('settings.langEnDesc') },
+])
 </script>
 
 <template>
   <div class="settings-page">
-    <h1 class="settings-title">{{ $t('settings.title') }}</h1>
+    <div class="settings-head">
+      <h1 class="settings-title">{{ $t('settings.title') }}</h1>
+      <p class="settings-sub">{{ $t('settings.subtitle') }}</p>
+    </div>
 
     <!-- 个人资料 -->
     <n-card :title="$t('settings.profileCard')" class="settings-card">
       <div class="profile-row">
         <!-- n-avatar 的默认插槽优先级高于 src：只要插槽有内容就渲染文字、不发图片请求，
              所以首字母只在没有头像 URL 时才放进默认插槽；加载失败走 #fallback 回退 -->
-        <n-avatar :size="64" round :src="auth.user?.avatar_url ?? undefined">
+        <n-avatar :size="72" round :src="auth.user?.avatar_url ?? undefined" class="profile-avatar">
           <template v-if="!auth.user?.avatar_url">{{ (auth.user?.name ?? '?').slice(0, 1) }}</template>
           <template #fallback>
             <span class="avatar-fallback">{{ (auth.user?.name ?? '?').slice(0, 1) }}</span>
           </template>
         </n-avatar>
-        <n-space align="center">
-          <n-button size="small" :loading="uploadingAvatar" @click="openAvatarPicker">
-            {{ $t('settings.changeAvatar') }}
-          </n-button>
-          <n-button
-            v-if="profile.avatar_url"
-            size="small"
-            quaternary
-            type="error"
-            @click="removeAvatar"
-          >
-            {{ $t('settings.removeAvatar') }}
-          </n-button>
-          <n-text depth="3" style="font-size: 12px">{{ $t('settings.avatarHint') }}</n-text>
-        </n-space>
+        <div class="profile-meta">
+          <n-space align="center">
+            <n-button size="small" :loading="uploadingAvatar" @click="openAvatarPicker">
+              {{ $t('settings.changeAvatar') }}
+            </n-button>
+            <n-button
+              v-if="profile.avatar_url"
+              size="small"
+              quaternary
+              type="error"
+              @click="removeAvatar"
+            >
+              {{ $t('settings.removeAvatar') }}
+            </n-button>
+          </n-space>
+          <n-text depth="3" class="hint">{{ $t('settings.avatarHint') }}</n-text>
+        </div>
         <input
           ref="avatarInputRef"
           type="file"
@@ -166,7 +171,7 @@ const languageOptions = [
         />
       </div>
 
-      <n-form label-placement="left" label-width="64" style="margin-top: 16px">
+      <n-form label-placement="left" label-width="64" style="margin-top: 20px">
         <n-form-item :label="$t('settings.nameLabel')">
           <n-input
             v-model:value="profile.name"
@@ -234,29 +239,32 @@ const languageOptions = [
     <!-- 语言 -->
     <n-card :title="$t('settings.languageCard')" class="settings-card">
       <n-radio-group v-model:value="languageMode" :aria-label="$t('settings.languageCard')">
-        <n-space>
-          <n-radio v-for="option in languageOptions" :key="option.value" :value="option.value">
-            {{ option.label }}
+        <div class="option-grid">
+          <n-radio v-for="option in languageOptions" :key="option.value" :value="option.value" class="option-tile">
+            <span class="option-body">
+              <span class="option-label">{{ option.label }}</span>
+              <span class="option-desc">{{ option.hint }}</span>
+            </span>
           </n-radio>
-        </n-space>
+        </div>
       </n-radio-group>
-      <n-text depth="3" style="font-size: 12px; display: block; margin-top: 8px">
-        {{ $t('settings.languageHint') }}
-      </n-text>
+      <n-text depth="3" class="hint block-hint">{{ $t('settings.languageHint') }}</n-text>
     </n-card>
 
     <!-- 外观 -->
     <n-card :title="$t('settings.appearanceCard')" class="settings-card">
       <n-radio-group v-model:value="themeMode" :aria-label="$t('settings.appearanceCard')">
-        <n-space>
-          <n-radio v-for="option in themeOptions" :key="option.value" :value="option.value">
-            {{ option.label }}
+        <div class="option-grid">
+          <!-- 保留 .n-radio 结构：e2e 按文案点选主题，交互与视觉升级互不干扰 -->
+          <n-radio v-for="option in themeOptions" :key="option.value" :value="option.value" class="option-tile">
+            <span class="option-body">
+              <span class="option-label">{{ option.label }}</span>
+              <span class="option-desc">{{ option.desc }}</span>
+            </span>
           </n-radio>
-        </n-space>
+        </div>
       </n-radio-group>
-      <n-text depth="3" style="font-size: 12px; display: block; margin-top: 8px">
-        {{ $t('settings.appearanceHint') }}
-      </n-text>
+      <n-text depth="3" class="hint block-hint">{{ $t('settings.appearanceHint') }}</n-text>
     </n-card>
   </div>
 </template>
@@ -266,18 +274,45 @@ const languageOptions = [
   max-width: 720px;
   margin: 0 auto;
 }
+.settings-head {
+  margin: 4px 0 20px;
+}
 .settings-title {
   font-size: 22px;
-  margin: 8px 0 16px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  margin: 0;
+}
+.settings-sub {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: var(--text-3);
 }
 .settings-card {
   margin-bottom: 16px;
+  border-radius: var(--radius-md, 10px);
 }
 .profile-row {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 18px;
   flex-wrap: wrap;
+}
+.profile-avatar {
+  box-shadow: var(--shadow-card);
+}
+.profile-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.hint {
+  font-size: 12px;
+}
+.block-hint {
+  display: block;
+  margin-top: 10px;
 }
 /* n-avatar #fallback 裸渲染进 flex 容器，需自带占满与居中 */
 .avatar-fallback {
@@ -286,5 +321,60 @@ const languageOptions = [
   justify-content: center;
   width: 100%;
   height: 100%;
+}
+
+/* 选项瓷砖：radio 仍是原生交互元素（e2e 依赖），外面套一层可点卡片提升可读性 */
+.option-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+}
+.option-tile {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md, 10px);
+  background: var(--bg-surface);
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+.option-tile:hover {
+  border-color: var(--border-strong);
+  background: var(--bg-hover);
+}
+/* 选中态：描边点亮 + 极浅底，与 radio 圆点双重反馈 */
+.option-tile.n-radio--checked {
+  border-color: var(--type-md);
+  background: var(--type-md-bg);
+  box-shadow: 0 0 0 1px var(--type-md) inset;
+}
+.option-tile :deep(.n-radio__radio-wrapper) {
+  margin-top: 2px;
+}
+.option-body {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.option-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-1);
+}
+.option-desc {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-3);
+}
+@media (max-width: 560px) {
+  .option-grid {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

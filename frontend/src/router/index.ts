@@ -12,7 +12,8 @@ export const router = createRouter({
     {
       path: '/login',
       component: () => import('../layouts/DefaultLayout.vue'),
-      meta: { guest: true, titleKey: 'router.login' },
+      // bareContent：认证页铺满内容区（布局不加内边距），否则底部会多一条滚动条
+      meta: { guest: true, titleKey: 'router.login', bareContent: true },
       children: [
         {
           // name 须挂在空 path 子路由上：挂父路由会导致按 name 跳转时不渲染子组件（空白页）
@@ -25,7 +26,7 @@ export const router = createRouter({
     {
       path: '/register',
       component: () => import('../layouts/DefaultLayout.vue'),
-      meta: { guest: true, titleKey: 'router.register' },
+      meta: { guest: true, titleKey: 'router.register', bareContent: true },
       children: [
         {
           path: '',

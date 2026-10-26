@@ -2,15 +2,23 @@
 import { computed, h } from 'vue'
 import { NButton, useMessage } from 'naive-ui'
 import { useI18n } from 'vue-i18n'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import NotificationBell from '../components/NotificationBell.vue'
 import ThemeToggle from '../components/ThemeToggle.vue'
 
 const auth = useAuthStore()
 const router = useRouter()
+const route = useRoute()
 const message = useMessage()
 const { t } = useI18n()
+
+/**
+ * 认证页（登录/注册）要铺满整个内容区：给它们去掉内边距，由 AuthShell 自己布局。
+ * 若仍加 padding，AuthShell 只能用负 margin 抵消，而 n-layout-scroll-container
+ * 按未抵消的高度算滚动，页面底部就会多出一条滚动条。
+ */
+const isBareContent = computed(() => route.meta.bareContent === true)
 
 function renderLogoutLabel() {
   return h(NButton, { text: true, type: 'error' }, { default: () => t('shell.logout') })
@@ -85,7 +93,13 @@ function handleUserMenu(key: string) {
       </div>
     </n-layout-header>
     <!-- role=main：n-layout-content 渲染成 div，不自动成为 main landmark -->
-    <n-layout-content id="main" class="layout-content" tabindex="-1" role="main">
+    <n-layout-content
+      id="main"
+      class="layout-content"
+      :class="{ 'layout-content--bare': isBareContent }"
+      tabindex="-1"
+      role="main"
+    >
       <router-view />
     </n-layout-content>
   </n-layout>
@@ -183,6 +197,11 @@ function handleUserMenu(key: string) {
   padding: 28px 24px 48px;
   padding-left: calc(24px + env(safe-area-inset-left));
   padding-right: calc(24px + env(safe-area-inset-right));
+}
+/* 认证页：内容区不留白、不居中限宽，交给 AuthShell 自己铺满可用高度 */
+.layout-content--bare {
+  max-width: none;
+  padding: 0;
 }
 @media (max-width: 640px) {
   .header-inner {

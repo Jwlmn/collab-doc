@@ -27,6 +27,7 @@ const en: typeof zhCN = {
   },
   settings: {
     title: 'Settings',
+    subtitle: 'Manage your profile, password and interface preferences',
     profileCard: 'Profile',
     changeAvatar: 'Change avatar',
     removeAvatar: 'Remove avatar',
@@ -46,10 +47,15 @@ const en: typeof zhCN = {
     languageCard: 'Language',
     languageHint:
       'Interface copy, built-in component text and the browser tab language switch together.',
+    langZhDesc: 'Interface and messages in Simplified Chinese',
+    langEnDesc: 'UI and messages shown in English',
     appearanceCard: 'Appearance',
     themeSystem: 'Follow system',
     themeLight: 'Light',
     themeDark: 'Dark',
+    themeSystemDesc: 'Matches your device light/dark setting',
+    themeLightDesc: 'Always use the light interface',
+    themeDarkDesc: 'Always use the dark interface, easier on the eyes',
     appearanceHint:
       'With "Follow system", light/dark follows your device setting; the moon/sun button in the header pins a manual choice.',
   },
@@ -471,10 +477,11 @@ const en: typeof zhCN = {
     shared: '{actor} shared “{title}” with you ({role})',
   },
   trash: {
-    backToList: '← Back to documents',
+    backToList: 'Back to documents',
     heading: 'Trash',
     hint: 'Deleted documents stay here and can be restored anytime',
     empty: 'Trash is empty',
+    countHint: '{count} documents',
     deletedAt: 'Deleted {time}',
     restore: 'Restore',
     purge: 'Delete forever',

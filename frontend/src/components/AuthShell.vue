@@ -99,10 +99,9 @@ const features = [
 .auth-shell {
   display: grid;
   grid-template-columns: 1.05fr 1fr;
-  /* min-height 要扣掉被负 margin 抵消的上下内边距（28+48），否则 n-layout 滚动容器会多出一截空白 */
-  min-height: calc(100vh - 60px - 76px);
-  min-height: calc(100dvh - 60px - 76px);
-  margin: -28px -24px -48px; /* 抵消 DefaultLayout 的内容内边距，让品牌区贴满可用高度 */
+  /* DefaultLayout 的 layout-content--bare 已去掉内边距，这里直接填满 header 以下的可用高度 */
+  min-height: calc(100vh - 60px);
+  min-height: calc(100dvh - 60px);
   background: var(--bg-surface);
 }
 
@@ -280,16 +279,6 @@ const features = [
     color: #fff;
     background: linear-gradient(135deg, #4098fc 0%, #2080f0 55%, #1668d6 100%);
     box-shadow: 0 4px 12px rgba(32, 128, 240, 0.32);
-  }
-}
-
-/* 手机：DefaultLayout 的内边距在 640px 降到 16/20，负 margin 与 min-height 必须同步扣减，
-   否则滚动容器会多出一截空白（与桌面分支同一套算法，只是数值跟着内边距变） */
-@media (max-width: 640px) {
-  .auth-shell {
-    min-height: calc(100vh - 60px - 60px);
-    min-height: calc(100dvh - 60px - 60px);
-    margin: -20px -16px -40px;
   }
 }
 </style>

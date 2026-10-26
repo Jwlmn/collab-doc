@@ -73,51 +73,65 @@ onMounted(() => {
 <template>
   <div>
     <div class="trash-header">
-      <n-space align="center">
-        <n-button size="small" quaternary @click="router.push('/')">{{ $t('trash.backToList') }}</n-button>
-        <h2 style="margin: 0">{{ $t('trash.heading') }}</h2>
-      </n-space>
-      <n-text depth="3" style="font-size: 13px">{{ $t('trash.hint') }}</n-text>
+      <div class="trash-heading">
+        <div class="trash-title-row">
+          <n-button size="small" quaternary class="back-btn" @click="router.push('/')">
+            <template #icon>
+              <n-icon size="16">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                  stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M15 18l-6-6 6-6" />
+                </svg>
+              </n-icon>
+            </template>
+            {{ $t('trash.backToList') }}
+          </n-button>
+          <h2 class="trash-title">{{ $t('trash.heading') }}</h2>
+        </div>
+        <p v-if="!loading && list.length > 0" class="trash-count">
+          {{ $t('trash.countHint', { count: list.length }) }}
+        </p>
+      </div>
+      <n-text depth="3" class="trash-hint">{{ $t('trash.hint') }}</n-text>
     </div>
 
     <template v-if="loading">
       <n-skeleton v-for="i in 3" :key="i" height="64px" :sharp="false" style="margin-bottom: 12px" />
     </template>
 
-    <n-empty
-      v-else-if="list.length === 0"
-      :description="$t('trash.empty')"
-      style="margin-top: 64px"
-    />
+    <n-empty v-else-if="list.length === 0" :description="$t('trash.empty')" class="trash-empty" />
 
     <n-list v-else bordered class="trash-list">
-      <n-list-item v-for="doc in list" :key="doc.id">
+      <n-list-item v-for="doc in list" :key="doc.id" class="trash-row">
         <template #prefix>
-          <n-icon size="24" depth="3">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
-              stroke="currentColor" stroke-width="1.5">
-              <path d="M6 2h9l5 5v15H6z" />
-              <path d="M14 2v6h6" />
+          <span class="type-icon" :class="doc.type === 'excel' ? 'type-icon--excel' : 'type-icon--md'" aria-hidden="true">
+            <svg v-if="doc.type === 'excel'" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="4" width="18" height="16" rx="2" />
+              <path d="M3 9.5h18M3 14.5h18M9 4v16M15 4v16" />
             </svg>
-          </n-icon>
+            <svg v-else xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M7 3.5h7.2L18 7.3V20a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4.5a1 1 0 0 1 1-1z" />
+              <path d="M14 3.5V7.5H18" />
+              <path d="M9 12.5h6M9 16h4" />
+            </svg>
+          </span>
         </template>
         <n-thing>
           <template #header>
             <span class="title-row">
-              <n-tag size="tiny" round :type="doc.type === 'excel' ? 'success' : 'default'">
-                {{ doc.type === 'excel' ? 'Excel' : 'MD' }}
-              </n-tag>
               <span class="title-text">{{ doc.title }}</span>
             </span>
           </template>
           <template #description>
-            <n-text depth="3" style="font-size: 12px">
+            <n-text depth="3" class="deleted-at">
               {{ $t('trash.deletedAt', { time: formatTime(doc.deleted_at) }) }}
             </n-text>
           </template>
         </n-thing>
         <template #suffix>
-          <n-space align="center">
+          <n-space align="center" size="small" class="trash-actions">
             <n-button
               size="small"
               type="primary"
@@ -145,23 +159,90 @@ onMounted(() => {
 <style scoped>
 .trash-header {
   display: flex;
-  align-items: baseline;
+  align-items: flex-end;
   justify-content: space-between;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 8px 16px;
   margin-bottom: 16px;
 }
+.trash-heading {
+  min-width: 0;
+}
+.trash-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.back-btn {
+  padding-left: 8px;
+  flex: none;
+}
+.trash-title {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+.trash-count {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--text-3);
+}
+.trash-hint {
+  font-size: 13px;
+}
+.trash-empty {
+  margin-top: 64px;
+}
 .trash-list {
-  border-radius: 8px;
+  border-radius: var(--radius-md, 10px);
+  overflow: hidden;
+}
+/* 与文档列表同一套类型图标：MD 蓝 / Excel 绿 */
+.type-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  flex: none;
+  border-radius: 10px;
+  color: var(--type-md);
+  background: var(--type-md-bg);
+}
+.type-icon svg {
+  width: 20px;
+  height: 20px;
+}
+.type-icon--excel {
+  color: var(--type-excel);
+  background: var(--type-excel-bg);
 }
 .title-row {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  min-width: 0;
 }
 .title-text {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.deleted-at {
+  font-size: 12px;
+}
+.trash-row :deep(.n-list-item__main) {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.trash-row :deep(.n-list-item__suffix) {
+  flex: 0 0 auto;
+}
+@media (max-width: 640px) {
+  .trash-title {
+    font-size: 20px;
+  }
 }
 </style>
