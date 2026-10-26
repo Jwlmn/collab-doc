@@ -461,8 +461,8 @@ async function copyInviteLink(): Promise<void> {
   right: 0;
   background: var(--bg-surface);
   border: 1px solid var(--border-subtle);
-  border-radius: 8px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.16);
+  border-radius: var(--radius-md, 10px);
+  box-shadow: var(--shadow-float);
   max-height: 220px;
   overflow-y: auto;
   z-index: 20;

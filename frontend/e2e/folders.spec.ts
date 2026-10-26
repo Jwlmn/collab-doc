@@ -44,12 +44,12 @@ test('文档文件夹：建夹 → 移入 → 筛选 → 刷新徽标仍在 → 
   await page.getByRole('button', { name: '关闭' }).click()
   await expect(page.getByText('管理文件夹', { exact: true })).toBeHidden()
 
-  // 移动 A 入夹
+  // 移动 A 入夹（行操作统一收在 ⋯ 菜单里，桌面不再平铺「移动」按钮）
   const rowA = page.locator('.doc-list .n-list-item').filter({ hasText: titleA })
   const attached = page.waitForResponse(
     (r) => r.request().method() === 'POST' && /\/api\/documents\/\d+\/folder$/.test(r.url()),
   )
-  await rowA.getByRole('button', { name: '移动' }).click()
+  await rowA.getByRole('button', { name: '⋯（更多操作）' }).click()
   await page.locator('.n-dropdown-menu').getByText(folderName, { exact: true }).click()
   expect((await attached).ok()).toBe(true)
   await expect(rowA.locator('.n-tag').filter({ hasText: folderName })).toBeVisible()
@@ -76,7 +76,7 @@ test('文档文件夹：建夹 → 移入 → 筛选 → 刷新徽标仍在 → 
   const detached = page.waitForResponse(
     (r) => r.request().method() === 'POST' && /\/api\/documents\/\d+\/folder$/.test(r.url()),
   )
-  await rowA2.getByRole('button', { name: '移动' }).click()
+  await rowA2.getByRole('button', { name: '⋯（更多操作）' }).click()
   await page.locator('.n-dropdown-menu').getByText('未分类', { exact: true }).click()
   expect((await detached).ok()).toBe(true)
   await expect(rowA2.locator('.n-tag').filter({ hasText: folderName })).toHaveCount(0)

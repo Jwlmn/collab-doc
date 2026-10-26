@@ -169,7 +169,7 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: space-between;
   padding-bottom: 8px;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+  border-bottom: 1px solid var(--border-faint);
 }
 .bell-title {
   font-weight: 600;
@@ -184,16 +184,17 @@ onBeforeUnmount(() => {
   align-items: flex-start;
   gap: 8px;
   width: 100%;
-  padding: 10px 4px;
+  padding: 10px 8px;
   border: none;
   background: none;
   text-align: left;
   cursor: pointer;
-  border-radius: 6px;
+  border-radius: var(--radius-sm, 6px);
   font: inherit;
+  transition: background-color 0.15s ease;
 }
 .bell-item:hover {
-  background: rgba(0, 0, 0, 0.04);
+  background: var(--bg-hover);
 }
 .bell-dot {
   width: 8px;
@@ -204,7 +205,7 @@ onBeforeUnmount(() => {
   background: transparent;
 }
 .bell-dot.on {
-  background: #2080f0;
+  background: var(--type-md);
 }
 .bell-body {
   display: flex;
@@ -222,6 +223,6 @@ onBeforeUnmount(() => {
 }
 .bell-time {
   font-size: 12px;
-  color: rgba(0, 0, 0, 0.4);
+  color: var(--text-3);
 }
 </style>

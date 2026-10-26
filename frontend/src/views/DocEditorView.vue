@@ -1036,7 +1036,7 @@ async function handleRename() {
   background: var(--bg-surface);
   border: 1px solid var(--border-subtle);
   border-radius: 6px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.24);
+  box-shadow: var(--shadow-float);
   z-index: 20;
   visibility: hidden;
   opacity: 0;

@@ -456,9 +456,16 @@ function handleTableMenu(key: string) {
   padding: 6px 8px;
   border-bottom: 1px solid var(--border-faint);
   position: sticky;
-  top: 0;
+  /* 吸附在编辑器顶栏（min-height 56px）下方：两者同为 sticky，同为 top:0 会互相遮挡 */
+  top: 56px;
   z-index: 5;
   background: var(--bg-surface);
-  border-radius: 8px 8px 0 0;
+  border-radius: var(--radius-lg, 14px) var(--radius-lg, 14px) 0 0;
+}
+/* 窄屏顶栏允许换行、可能高于 56px，此时取消吸附避免工具栏浮在半空 */
+@media (max-width: 767px) {
+  .fmt-toolbar {
+    position: static;
+  }
 }
 </style>

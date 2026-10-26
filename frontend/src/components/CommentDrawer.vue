@@ -561,9 +561,14 @@ async function handleDelete(comment: Comment): Promise<void> {
   gap: 16px;
 }
 .comment-item {
-  padding: 12px;
+  padding: 12px 14px;
   background: var(--bg-muted);
-  border-radius: 8px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md, 10px);
+  transition: border-color 0.15s ease;
+}
+.comment-item:hover {
+  border-color: var(--border-subtle);
 }
 .comment-item.resolved {
   /* 已解决线程（开关打开时）弱化呈现 */
@@ -589,7 +594,7 @@ async function handleDelete(comment: Comment): Promise<void> {
 .reply-list {
   margin-top: 10px;
   padding-left: 12px;
-  border-left: 2px solid var(--border-subtle);
+  border-left: 2px solid var(--border-strong);
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -597,7 +602,8 @@ async function handleDelete(comment: Comment): Promise<void> {
 .comment-reply {
   padding: 8px 10px;
   background: var(--bg-surface);
-  border-radius: 6px;
+  border: 1px solid var(--border-faint);
+  border-radius: var(--radius-sm, 6px);
 }
 /* 二级回复的引用块：小字浅色，标明回的是哪一条 */
 .reply-quote {
@@ -675,10 +681,10 @@ async function handleDelete(comment: Comment): Promise<void> {
   white-space: pre-wrap;
 }
 .mention-tag {
-  color: #2080f0;
-  background: rgba(32, 128, 240, 0.1);
+  color: var(--type-md);
+  background: var(--type-md-bg);
   border-radius: 4px;
-  padding: 0 4px;
+  padding: 0 5px;
   font-weight: 500;
 }
 /* 吸底的输入栏：不参与收缩，与滚动区之间用边框分隔 */
@@ -696,8 +702,8 @@ async function handleDelete(comment: Comment): Promise<void> {
   right: 0;
   background: var(--bg-surface);
   border: 1px solid var(--border-subtle);
-  border-radius: 8px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.16);
+  border-radius: var(--radius-md, 10px);
+  box-shadow: var(--shadow-float);
   max-height: 200px;
   overflow-y: auto;
   z-index: 10;

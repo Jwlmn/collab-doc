@@ -323,7 +323,8 @@ async function handleDelete(version: DocumentVersion): Promise<void> {
   margin-bottom: 16px;
 }
 .version-list {
-  border-radius: 8px;
+  border-radius: var(--radius-md, 10px);
+  overflow: hidden;
 }
 .preview-body {
   min-height: 200px;

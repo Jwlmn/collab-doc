@@ -845,26 +845,10 @@ const emptyStateDescription = computed(() => {
               <n-button size="small" type="primary" quaternary @click="openDoc(doc)">
                 打开
               </n-button>
-              <!-- 桌面：平铺操作；移动：收进「⋯」（操作默认收进 ⋯，hover 才显形次要项） -->
-              <n-space v-if="doc.role === 'owner' && !isMobile" size="small" class="row-secondary">
-                <n-dropdown
-                  :options="ownerMenuOptions(doc)"
-                  placement="bottom-end"
-                  @select="(key: string) => handleOwnerMenu(key, doc)"
-                >
-                  <n-button size="small" quaternary>{{ $t('folders.moveBtn') }}</n-button>
-                </n-dropdown>
-                <n-button size="small" quaternary @click="openShare(doc)">{{ $t('documents.shareBtn') }}</n-button>
-                <n-button size="small" @click="openRename(doc)">{{ $t('documents.renameBtn') }}</n-button>
-                <n-popconfirm @positive-click="handleDelete(doc)">
-                  <template #trigger>
-                    <n-button size="small" type="error" quaternary>{{ $t('documents.deleteBtn') }}</n-button>
-                  </template>
-                  确定删除「{{ doc.title }}」吗？将进入回收站。
-                </n-popconfirm>
-              </n-space>
+              <!-- 桌面与移动端统一走 ⋯ 下拉：平铺的次要按钮若用 opacity:0 收起，
+                   读屏仍会念到、Tab 仍会聚焦到不可见按钮上，键盘用户会「盲点」 -->
               <n-dropdown
-                v-else-if="doc.role === 'owner'"
+                v-if="doc.role === 'owner'"
                 :options="ownerMenuOptions(doc)"
                 placement="bottom-end"
                 @select="(key: string) => handleOwnerMenu(key, doc)"
@@ -1098,21 +1082,6 @@ const emptyStateDescription = computed(() => {
 }
 .doc-row :deep(.n-list-item__suffix) {
   flex: 0 0 auto;
-}
-/* 行内操作默认收进 ⋯，hover 才显形次要项：列表更干净，操作仍一键可达 */
-.row-secondary {
-  opacity: 0;
-  transition: opacity 0.15s ease;
-}
-.doc-row:hover .row-secondary,
-.doc-row:focus-within .row-secondary {
-  opacity: 1;
-}
-@media (hover: none) {
-  /* 触屏没有 hover，直接常显，避免操作藏起来够不着 */
-  .row-secondary {
-    opacity: 1;
-  }
 }
 .title-row {
   display: inline-flex;
